@@ -1,2 +1,5 @@
-# NovaDrone
- who let high schoolers play with sharp spinny objects?
+# About Us
+We manufacture, develop, and operate premium drones. 
+
+# Models
+* ZippyZoom
