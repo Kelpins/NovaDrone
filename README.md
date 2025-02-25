@@ -4,7 +4,8 @@ We manufacture, develop, and operate premium drones.
 # Models
 * ZippyZoom
 
-# Questions
-* what is the difference between LF and CRLF?
 # Who are we
 Teenagers
+
+# Questions
+* what is the difference between LF and CRLF?
