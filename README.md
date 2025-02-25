@@ -6,3 +6,5 @@ We manufacture, develop, and operate premium drones.
 
 # Questions
 * what is the difference between LF and CRLF?
+# Who are we
+Teenagers
