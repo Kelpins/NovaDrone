@@ -1,21 +1,20 @@
 # NovaDrone
- who let high schoolers play with sharp spinny objects?
- I did!!!
+* Who let high schoolers play with sharp spinny objects?
+* We did!!!
 
 # Team Members!
 * Leo
 * Kellan
 * Filmona
-* Ms. O'Neal
 
 # About Us
-We manufacture, develop, and operate premium drones. 
+* We manufacture, develop, and operate premium drones. 
 
 # Models
 * ZippyZoom
 
 # Who are we
-Teenagers
+* Teenagers who drone on about drones
 
 # Questions
-* what is the difference between LF and CRLF?
+* What is the difference between LF and CRLF?
