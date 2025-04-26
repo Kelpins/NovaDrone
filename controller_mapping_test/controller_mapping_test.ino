@@ -1,6 +1,5 @@
 #include "Wire.h"
 #include <MPU6050_light.h>
-#include <Servo.h>
 
 MPU6050 mpu(Wire);
 
@@ -42,9 +41,7 @@ double f_ccw_scalar = 0.0;
 double b_ccw_scalar = 0.0;
 
 // scalar affecting smoothness of movements
-const int scalar_change = 0.001
-
-
+const int scalar_change = 0.001;
 
 // function runs on rising edge of PPM pulse (within interrupt)
 void IRAM_ATTR ppmISR() {
@@ -64,22 +61,45 @@ void IRAM_ATTR ppmISR() {
   }
 }
 
+void setPWM(int chan, int pulse) {
+  pulse = constrain(pulse, 1000, 2000);
+  uint32_t duty = uint32_t(pulse) * 65535UL / 20000UL;
+  ledcWrite(chan-9, duty);
+}
+
 void setup(){
-  Serial.begin(19200);
+  Serial.begin(9600);
   Wire.begin();
 
   byte status = mpu.begin();
-  while (status!=0){Serial.println("IMU discnonected");} // stop if could not connect to MPU
+  while (status!=0){Serial.println("IMU disconnected");} // stop if could not connect to MPU
   delay(1000);
   mpu.calcOffsets(true, true);
 
-  pinMode(f_cw_pin, OUTPUT);
-  pinMode(b_cw_pin, OUTPUT);
-  pinMode(f_ccw_pin, OUTPUT);
-  pinMode(b_ccw_pin, OUTPUT);
+  Serial.println("imu connected - arming escs");
+
+  //"arming" each esc; basically setting it up to receive 1000 <= x <= 2000 microseconds of pwm, then sending it 1000 (motor off)
+  ledcSetup(0, 50, 16);
+  ledcSetup(1, 50, 16);
+  ledcSetup(2, 50, 16);
+  ledcSetup(3, 50, 16);
+
+  ledcAttachPin(f_cw_pin, 0);
+  ledcAttachPin(b_cw_pin, 1);
+  ledcAttachPin(f_ccw_pin, 2);
+  ledcAttachPin(b_ccw_pin, 3);
+
+  setPWM(f_cw_pin, 1000);
+  setPWM(b_cw_pin, 1000);
+  setPWM(f_ccw_pin, 1000);
+  setPWM(b_ccw_pin, 1000);
 
   pinMode(ppm_pin, INPUT);
   attachInterrupt(digitalPinToInterrupt(ppm_pin), ppmISR, RISING); // Attach interrupt to read PPM
+
+  delay(2500);
+  Serial.println("ready!");
+
 }
 
 void updateStates() {
@@ -134,21 +154,24 @@ void adjustPitch() {
 
 }
 
+void adjustRoll() {}
+void adjustYaw() {}
+
 void updateMotorVoltages() {
 
   adjustPitch();
   adjustRoll();
   adjustYaw();
 
-  double f_cw_volt = 255.0 * f_cw_scalar * v_scalar;
-  double b_cw_volt = 255.0 * b_cw_scalar * v_scalar;
-  double f_ccw_volt = 255.0 * f_ccw_scalar * v_scalar;
-  double b_ccow_volt = 255.0 * b_ccw_scalar * v_scalar;
+  double f_cw_volt = cout_throttle;//1000.0 * (f_cw_scalar * v_scalar + 1.0);
+  double b_cw_volt = cout_throttle;//1000.0 * (b_cw_scalar * v_scalar + 1.0);
+  double f_ccw_volt = cout_throttle;//1000.0 * (f_ccw_scalar * v_scalar + 1.0);
+  double b_ccw_volt = cout_throttle;//1000.0 * (b_ccw_scalar * v_scalar + 1.0);
 
-  //analogWrite(f_cw_pin, f_cw_volt);
-  //analogWrite(b_cw_pin, b_cw_volt);
-  //analogWrite(f_ccw_pin, f_ccw_volt);
-  //analogWrite(b_ccw_pin, b_ccw_volt);
+  setPWM(f_cw_pin, f_cw_volt);
+  setPWM(b_cw_pin, b_cw_volt);
+  setPWM(f_ccw_pin, f_ccw_volt);
+  setPWM(b_ccw_pin, b_ccw_volt);
 
 }
 
