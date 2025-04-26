@@ -1,9 +1,9 @@
 #include "Wire.h"
 #include <MPU6050_light.h>
 #include <ESP32Servo.h>
-#include "BluetoothSerial.h"
+//#include <BluetoothSerial.h>
 
-BluetoothSerial SerialBT;
+//BluetoothSerial //SerialBT;
 
 MPU6050 mpu(Wire);
 
@@ -17,6 +17,8 @@ const int b_ccw_pin = 12;
 // timer to control serial monitor output
 unsigned long timer = 0;
 unsigned long timer2 = 0;
+unsigned long timer3 = 0;
+unsigned long timer4 = 0;
 
 // variables all volatile because they are utilized in an interrupt
 volatile unsigned long lastTime = 0;
@@ -46,7 +48,7 @@ double f_ccw_scalar = 0.5;
 double b_ccw_scalar = 0.5;
 
 // scalar affecting smoothness of movements
-const double scalar_change = 0.001;
+const double scalar_change = 0.00025;
 
 // prep Servo library for usage (wrapping the ledc pins)
 Servo esc[4];
@@ -75,16 +77,19 @@ void setPWM(int pin, int pulse) {
 
 void setup(){
   Serial.begin(9600);
-  SerialBT.begin("ZippyZoom");
+  //SerialBT.begin("ZippyZoom");
   Wire.begin();
 
   byte status = mpu.begin();
-  while (status!=0){Serial.println("IMU disconnected");SerialBT.println("IMU disconnected");} // stop if could not connect to MPU
+  if (status != 0){Serial.println("IMU disconnected");/*//SerialBT.println("IMU disconnected");*/}
+  while (status!=0){Serial.println("IMU disconnected");delay(20);} // stop if could not connect to MPU
+  if (pulseIn(ppm_pin, HIGH, 25000) < 1000) {Serial.println("RX disconnected");}
+  while (pulseIn(ppm_pin, HIGH, 25000) < 1000) {Serial.println("RX disconnected");delay(20);}
   delay(1000);
   mpu.calcOffsets(true, true);
 
   Serial.println("imu connected - arming escs");
-  SerialBT.println("imu connected - arming escs");
+  //SerialBT.println("imu connected - arming escs");
 
   //"arming" each esc; basically setting it up to receive 1000 <= x <= 2000 microseconds of pwm, then sending it 1000 (motor off)
   esc[0].setPeriodHertz(50);
@@ -113,7 +118,7 @@ void setup(){
 
   delay(2500);
   Serial.println("ready!");
-  SerialBT.println("ready!");
+  //SerialBT.println("ready!");
 
 }
 
@@ -151,23 +156,23 @@ void updateStates() {
     Serial.print("bccw: "); Serial.println(b_ccw_scalar);
     
 
-    SerialBT.print(F("TEMP: ")); Serial.println(mpu.getTemp());
-    SerialBT.print(F("   X: ")); Serial.print(imu_pitch); // controls pitch
-    SerialBT.print("\t| Y: ");  Serial.print(imu_roll); // controls roll
-    SerialBT.print("\t| Z: ");   Serial.println(imu_yaw); // controlls yaw
+    //SerialBT.print(F("TEMP: ")); Serial.println(mpu.getTemp());
+    //SerialBT.print(F("   X: ")); Serial.print(imu_pitch); // controls pitch
+    //SerialBT.print("\t| Y: ");  Serial.print(imu_roll); // controls roll
+    //SerialBT.print("\t| Z: ");   Serial.println(imu_yaw); // controlls yaw
 
-    SerialBT.print("Roll: ");         Serial.print(cout_roll); // tilting and therefore moving side to side
-    SerialBT.print("\t| Pitch: ");    Serial.print(cout_pitch); // tilting and therefore moving forward and backward
-    SerialBT.print("\t| Yaw: ");      Serial.print(cout_yaw); // spinning in place
-    SerialBT.print("\t| Throttle: "); Serial.println(cout_throttle); // directly affecting power scalar
-    SerialBT.print("Aux1: ");         Serial.print(cout_vra); //first auxilary knob on controller
-    SerialBT.print("\t|  Aux2: ");    Serial.println(cout_vrb); //second auxilary knob on controller
+    //SerialBT.print("Roll: ");         Serial.print(cout_roll); // tilting and therefore moving side to side
+    //SerialBT.print("\t| Pitch: ");    Serial.print(cout_pitch); // tilting and therefore moving forward and backward
+    //SerialBT.print("\t| Yaw: ");      Serial.print(cout_yaw); // spinning in place
+    //SerialBT.print("\t| Throttle: "); Serial.println(cout_throttle); // directly affecting power scalar
+    //SerialBT.print("Aux1: ");         Serial.print(cout_vra); //first auxilary knob on controller
+    //SerialBT.print("\t|  Aux2: ");    Serial.println(cout_vrb); //second auxilary knob on controller
 
-    SerialBT.print("vscl: "); Serial.println(v_scalar);
-    SerialBT.print(" fcw: "); Serial.println(f_cw_scalar);
-    SerialBT.print(" bcw: "); Serial.println(b_cw_scalar);
-    SerialBT.print("fccw: "); Serial.println(f_ccw_scalar);
-    SerialBT.print("bccw: "); Serial.println(b_ccw_scalar);
+    //SerialBT.print("vscl: "); Serial.println(v_scalar);
+    //SerialBT.print(" fcw: "); Serial.println(f_cw_scalar);
+    //SerialBT.print(" bcw: "); Serial.println(b_cw_scalar);
+    //SerialBT.print("fccw: "); Serial.println(f_ccw_scalar);
+    //SerialBT.print("bccw: "); Serial.println(b_ccw_scalar);
 
     timer = millis();
   }
@@ -189,7 +194,7 @@ void adjustPitch() {
 
   if (millis() - timer2 > 1000) {
     Serial.print("pitch difference: ");Serial.println(difference);
-    SerialBT.print("pitch difference: ");Serial.println(difference);
+    //SerialBT.print("pitch difference: ");Serial.println(difference);
     timer2 = millis();
   }
 
@@ -215,7 +220,7 @@ void adjustRoll() {
 
   if (millis() - timer3 > 1000) {
     Serial.print("roll difference: ");Serial.println(difference);
-    SerialBT.print("roll difference: ");Serial.println(difference);
+    //SerialBT.print("roll difference: ");Serial.println(difference);
     timer3 = millis();
   }
 
@@ -242,7 +247,7 @@ void adjustYaw() {
 
   if (millis() - timer4 > 1000) {
     Serial.println(difference);
-    SerialBT.println(difference);
+    //SerialBT.println(difference);
     timer4 = millis();
   }
 
@@ -260,10 +265,10 @@ void updateMotorVoltages() {
   adjustThrottle();
   adjustPitch();
   adjustRoll();
-  adjustYaw();
+  //adjustYaw();
 
   v_scalar = (cout_throttle - 1000.0) / 1000.0;
-  if (cout_vra > 1050 || cout_vrb > 1050) {
+  if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 900) {
     v_scalar = 0.0;
   }
 
