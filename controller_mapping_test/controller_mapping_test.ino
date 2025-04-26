@@ -1,5 +1,6 @@
 #include "Wire.h"
 #include <MPU6050_light.h>
+#include <Servo.h>
 
 MPU6050 mpu(Wire);
 
@@ -32,13 +33,18 @@ double imu_pitch = 0.0;
 double imu_yaw = 0.0;
 
 // scalar 0 -> 1; multuplies every output voltage
-double vout_scalar = 0.0;
+double v_scalar = 0.0;
 
-//scalar 0 -> 1; multiplies each motor voltage separately
+// scalar 0 -> 1; multiplies each motor voltage separately
 double f_cw_scalar = 0.0;
 double b_cw_scalar = 0.0;
 double f_ccw_scalar = 0.0;
 double b_ccw_scalar = 0.0;
+
+// scalar affecting smoothness of movements
+const int scalar_change = 0.001
+
+
 
 // function runs on rising edge of PPM pulse (within interrupt)
 void IRAM_ATTR ppmISR() {
@@ -66,6 +72,11 @@ void setup(){
   while (status!=0){Serial.println("IMU discnonected");} // stop if could not connect to MPU
   delay(1000);
   mpu.calcOffsets(true, true);
+
+  pinMode(f_cw_pin, OUTPUT);
+  pinMode(b_cw_pin, OUTPUT);
+  pinMode(f_ccw_pin, OUTPUT);
+  pinMode(b_ccw_pin, OUTPUT);
 
   pinMode(ppm_pin, INPUT);
   attachInterrupt(digitalPinToInterrupt(ppm_pin), ppmISR, RISING); // Attach interrupt to read PPM
@@ -106,11 +117,20 @@ void updateStates() {
 void adjustPitch() {
 
   // target angle (-20 -> 20) given a c_out (1000 -> 2000);
-  // scaled on a polynomial
   double target_pitch = (1500.0 - cout_pitch) / 25.0;
   double current_pitch = imu_pitch;
 
-  
+  //calculates how much power should go to each motor based on the difference in pitches
+  //should use PID; direct voltage control is okay for now
+  //essentially a scalar for the change in each scalar
+  //-1: max difference forward
+  //1: max difference backward
+  double difference = (0.025) * (target_pitch - current_pitch);
+
+  f_cw_scalar += difference * scalar_change;
+  b_cw_scalar -= difference * scalar_change;
+  f_ccw_scalar += difference * scalar_change;
+  b_ccw_scalar -= difference * scalar_change;
 
 }
 
@@ -119,6 +139,16 @@ void updateMotorVoltages() {
   adjustPitch();
   adjustRoll();
   adjustYaw();
+
+  double f_cw_volt = 255.0 * f_cw_scalar * v_scalar;
+  double b_cw_volt = 255.0 * b_cw_scalar * v_scalar;
+  double f_ccw_volt = 255.0 * f_ccw_scalar * v_scalar;
+  double b_ccow_volt = 255.0 * b_ccw_scalar * v_scalar;
+
+  //analogWrite(f_cw_pin, f_cw_volt);
+  //analogWrite(b_cw_pin, b_cw_volt);
+  //analogWrite(f_ccw_pin, f_ccw_volt);
+  //analogWrite(b_ccw_pin, b_ccw_volt);
 
 }
 
