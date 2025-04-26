@@ -1,5 +1,9 @@
 #include "Wire.h"
 #include <MPU6050_light.h>
+#include <ESP32Servo.h>
+#include "BluetoothSerial.h"
+
+BluetoothSerial SerialBT;
 
 MPU6050 mpu(Wire);
 
@@ -12,6 +16,7 @@ const int b_ccw_pin = 12;
 
 // timer to control serial monitor output
 unsigned long timer = 0;
+unsigned long timer2 = 0;
 
 // variables all volatile because they are utilized in an interrupt
 volatile unsigned long lastTime = 0;
@@ -35,13 +40,16 @@ double imu_yaw = 0.0;
 double v_scalar = 0.0;
 
 // scalar 0 -> 1; multiplies each motor voltage separately
-double f_cw_scalar = 0.0;
-double b_cw_scalar = 0.0;
-double f_ccw_scalar = 0.0;
-double b_ccw_scalar = 0.0;
+double f_cw_scalar = 0.5;
+double b_cw_scalar = 0.5;
+double f_ccw_scalar = 0.5;
+double b_ccw_scalar = 0.5;
 
 // scalar affecting smoothness of movements
-const int scalar_change = 0.001;
+const double scalar_change = 0.001;
+
+// prep Servo library for usage (wrapping the ledc pins)
+Servo esc[4];
 
 // function runs on rising edge of PPM pulse (within interrupt)
 void IRAM_ATTR ppmISR() {
@@ -61,33 +69,39 @@ void IRAM_ATTR ppmISR() {
   }
 }
 
-void setPWM(int chan, int pulse) {
-  pulse = constrain(pulse, 1000, 2000);
-  uint32_t duty = uint32_t(pulse) * 65535UL / 20000UL;
-  ledcWrite(chan-9, duty);
+void setPWM(int pin, int pulse) {
+  esc[pin-9].writeMicroseconds(pulse);
 }
 
 void setup(){
   Serial.begin(9600);
+  SerialBT.begin("ZippyZoom");
   Wire.begin();
 
   byte status = mpu.begin();
-  while (status!=0){Serial.println("IMU disconnected");} // stop if could not connect to MPU
+  while (status!=0){Serial.println("IMU disconnected");SerialBT.println("IMU disconnected");} // stop if could not connect to MPU
   delay(1000);
   mpu.calcOffsets(true, true);
 
   Serial.println("imu connected - arming escs");
+  SerialBT.println("imu connected - arming escs");
 
   //"arming" each esc; basically setting it up to receive 1000 <= x <= 2000 microseconds of pwm, then sending it 1000 (motor off)
-  ledcSetup(0, 50, 16);
-  ledcSetup(1, 50, 16);
-  ledcSetup(2, 50, 16);
-  ledcSetup(3, 50, 16);
+  esc[0].setPeriodHertz(50);
+  esc[0].attach(f_cw_pin, 1000, 2000);
+  esc[0].writeMicroseconds(1000);
 
-  ledcAttachPin(f_cw_pin, 0);
-  ledcAttachPin(b_cw_pin, 1);
-  ledcAttachPin(f_ccw_pin, 2);
-  ledcAttachPin(b_ccw_pin, 3);
+  esc[1].setPeriodHertz(50);
+  esc[1].attach(b_cw_pin, 1000, 2000);
+  esc[1].writeMicroseconds(1000);
+
+  esc[2].setPeriodHertz(50);
+  esc[2].attach(f_ccw_pin, 1000, 2000);
+  esc[2].writeMicroseconds(1000);
+
+  esc[3].setPeriodHertz(50);
+  esc[3].attach(b_ccw_pin, 1000, 2000);
+  esc[3].writeMicroseconds(1000);
 
   setPWM(f_cw_pin, 1000);
   setPWM(b_cw_pin, 1000);
@@ -99,6 +113,7 @@ void setup(){
 
   delay(2500);
   Serial.println("ready!");
+  SerialBT.println("ready!");
 
 }
 
@@ -117,17 +132,42 @@ void updateStates() {
   imu_yaw = mpu.getAngleZ();
 
   if (millis() - timer > 1000) {
-    Serial.print(F("TEMP: "));    Serial.println(mpu.getTemp());
-    Serial.print(F("   X: "));       Serial.print(imu_pitch); // controls pitch
-    Serial.print("\t | Y: ");        Serial.print(imu_roll); // controls roll
-    Serial.print("\t| Z: ");        Serial.println(imu_yaw); // controlls yaw
+    Serial.print(F("TEMP: ")); Serial.println(mpu.getTemp());
+    Serial.print(F("   X: ")); Serial.print(imu_pitch); // controls pitch
+    Serial.print("\t| Y: ");  Serial.print(imu_roll); // controls roll
+    Serial.print("\t| Z: ");   Serial.println(imu_yaw); // controlls yaw
 
-    Serial.print("Roll: ");       Serial.print(cout_roll); // tilting and therefore moving side to side
-    Serial.print("\t| Pitch: ");      Serial.print(cout_pitch); // tilting and therefore moving forward and backward
-    Serial.print("\t| Yaw: ");        Serial.print(cout_yaw); // spinning in place
-    Serial.print("\t| Throttle: ");   Serial.println(cout_throttle); // directly affecting power scalar
-    Serial.print("Aux1: ");       Serial.print(cout_vra); //first auxilary knob on controller
-    Serial.print("\t|  Aux2: ");       Serial.println(cout_vrb); //second auxilary knob on controller
+    Serial.print("Roll: ");         Serial.print(cout_roll); // tilting and therefore moving side to side
+    Serial.print("\t| Pitch: ");    Serial.print(cout_pitch); // tilting and therefore moving forward and backward
+    Serial.print("\t| Yaw: ");      Serial.print(cout_yaw); // spinning in place
+    Serial.print("\t| Throttle: "); Serial.println(cout_throttle); // directly affecting power scalar
+    Serial.print("Aux1: ");         Serial.print(cout_vra); //first auxilary knob on controller
+    Serial.print("\t|  Aux2: ");    Serial.println(cout_vrb); //second auxilary knob on controller
+
+    Serial.print("vscl: "); Serial.println(v_scalar);
+    Serial.print(" fcw: "); Serial.println(f_cw_scalar);
+    Serial.print(" bcw: "); Serial.println(b_cw_scalar);
+    Serial.print("fccw: "); Serial.println(f_ccw_scalar);
+    Serial.print("bccw: "); Serial.println(b_ccw_scalar);
+    
+
+    SerialBT.print(F("TEMP: ")); Serial.println(mpu.getTemp());
+    SerialBT.print(F("   X: ")); Serial.print(imu_pitch); // controls pitch
+    SerialBT.print("\t| Y: ");  Serial.print(imu_roll); // controls roll
+    SerialBT.print("\t| Z: ");   Serial.println(imu_yaw); // controlls yaw
+
+    SerialBT.print("Roll: ");         Serial.print(cout_roll); // tilting and therefore moving side to side
+    SerialBT.print("\t| Pitch: ");    Serial.print(cout_pitch); // tilting and therefore moving forward and backward
+    SerialBT.print("\t| Yaw: ");      Serial.print(cout_yaw); // spinning in place
+    SerialBT.print("\t| Throttle: "); Serial.println(cout_throttle); // directly affecting power scalar
+    SerialBT.print("Aux1: ");         Serial.print(cout_vra); //first auxilary knob on controller
+    SerialBT.print("\t|  Aux2: ");    Serial.println(cout_vrb); //second auxilary knob on controller
+
+    SerialBT.print("vscl: "); Serial.println(v_scalar);
+    SerialBT.print(" fcw: "); Serial.println(f_cw_scalar);
+    SerialBT.print(" bcw: "); Serial.println(b_cw_scalar);
+    SerialBT.print("fccw: "); Serial.println(f_ccw_scalar);
+    SerialBT.print("bccw: "); Serial.println(b_ccw_scalar);
 
     timer = millis();
   }
@@ -147,26 +187,90 @@ void adjustPitch() {
   //1: max difference backward
   double difference = (0.025) * (target_pitch - current_pitch);
 
-  f_cw_scalar += difference * scalar_change;
-  b_cw_scalar -= difference * scalar_change;
-  f_ccw_scalar += difference * scalar_change;
-  b_ccw_scalar -= difference * scalar_change;
+  if (millis() - timer2 > 1000) {
+    Serial.print("pitch difference: ");Serial.println(difference);
+    SerialBT.print("pitch difference: ");Serial.println(difference);
+    timer2 = millis();
+  }
+
+  f_cw_scalar = f_cw_scalar + (difference * scalar_change);
+  b_cw_scalar = b_cw_scalar - (difference * scalar_change);
+  f_ccw_scalar = f_ccw_scalar + (difference * scalar_change);
+  b_ccw_scalar = b_ccw_scalar - (difference * scalar_change);
 
 }
 
-void adjustRoll() {}
-void adjustYaw() {}
+void adjustRoll() {
+
+  // target angle (-20 -> 20) given a c_out (1000 -> 2000);
+  double target_roll = (1500.0 - cout_roll) / 25.0;
+  double current_roll = imu_roll;
+
+  //calculates how much power should go to each motor based on the difference in pitches
+  //should use PID; direct voltage control is okay for now
+  //essentially a scalar for the change in each scalar
+  //-1: max difference forward
+  //1: max difference backward
+  double difference = (0.025) * (target_roll - current_roll);
+
+  if (millis() - timer3 > 1000) {
+    Serial.print("roll difference: ");Serial.println(difference);
+    SerialBT.print("roll difference: ");Serial.println(difference);
+    timer3 = millis();
+  }
+
+  f_cw_scalar = f_cw_scalar + (difference * scalar_change);
+  b_cw_scalar = b_cw_scalar - (difference * scalar_change);
+  f_ccw_scalar = f_ccw_scalar - (difference * scalar_change);
+  b_ccw_scalar = b_ccw_scalar + (difference * scalar_change);
+
+}
+
+//TODO: NEEDS ANGLE WRAPPING (can't go 360 lmao)
+void adjustYaw() {
+
+  // target angle (-20 -> 20) given a c_out (1000 -> 2000);
+  double target_yaw = (1500.0 - cout_yaw) / 25.0;
+  double current_yaw = imu_yaw;
+
+  //calculates how much power should go to each motor based on the difference in pitches
+  //should use PID; direct voltage control is okay for now
+  //essentially a scalar for the change in each scalar
+  //-1: max difference forward
+  //1: max difference backward
+  double difference = (0.025) * (target_yaw - current_yaw);
+
+  if (millis() - timer4 > 1000) {
+    Serial.println(difference);
+    SerialBT.println(difference);
+    timer4 = millis();
+  }
+
+  f_cw_scalar = f_cw_scalar + (difference * scalar_change);
+  b_cw_scalar = b_cw_scalar + (difference * scalar_change);
+  f_ccw_scalar = f_ccw_scalar - (difference * scalar_change);
+  b_ccw_scalar = b_ccw_scalar - (difference * scalar_change);
+
+}
+
+void adjustThrottle() {}
 
 void updateMotorVoltages() {
 
+  adjustThrottle();
   adjustPitch();
   adjustRoll();
   adjustYaw();
 
-  double f_cw_volt = cout_throttle;//1000.0 * (f_cw_scalar * v_scalar + 1.0);
-  double b_cw_volt = cout_throttle;//1000.0 * (b_cw_scalar * v_scalar + 1.0);
-  double f_ccw_volt = cout_throttle;//1000.0 * (f_ccw_scalar * v_scalar + 1.0);
-  double b_ccw_volt = cout_throttle;//1000.0 * (b_ccw_scalar * v_scalar + 1.0);
+  v_scalar = (cout_throttle - 1000.0) / 1000.0;
+  if (cout_vra > 1050 || cout_vrb > 1050) {
+    v_scalar = 0.0;
+  }
+
+  double f_cw_volt = 1000.0 * (f_cw_scalar * v_scalar + 1.0);
+  double b_cw_volt = 1000.0 * (b_cw_scalar * v_scalar + 1.0);
+  double f_ccw_volt = 1000.0 * (f_ccw_scalar * v_scalar + 1.0);
+  double b_ccw_volt = 1000.0 * (b_ccw_scalar * v_scalar + 1.0);
 
   setPWM(f_cw_pin, f_cw_volt);
   setPWM(b_cw_pin, b_cw_volt);
