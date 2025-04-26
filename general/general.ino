@@ -54,6 +54,9 @@ float pid_max_roll = 400;
 float pid_max_pitch = 400;
 float pid_max_yaw = 400;
 
+// Loop time constant (4000 us = 0.004 s)
+#define DELTA_T 0.004f
+
 // --- Global Variables ---
 // ESC Objects
 Servo esc1;
@@ -81,12 +84,17 @@ bool armed = false;
 // Sensor Data
 float angle_roll, angle_pitch, angle_yaw; // Current angles from MPU
 float rate_roll, rate_pitch, rate_yaw;     // Current rates from MPU (might be needed for D term)
+float acc_x, acc_y, acc_z;                 // Raw accelerometer data
 
 // PID Variables
 float pid_error_temp;
 float pid_i_mem_roll, pid_i_mem_pitch, pid_i_mem_yaw;
 float pid_last_roll_d_error, pid_last_pitch_d_error, pid_last_yaw_d_error;
 float pid_output_roll, pid_output_pitch, pid_output_yaw;
+
+// Position Estimation Variables (Basic Dead Reckoning - Prone to Drift!)
+float velocity_x = 0.0, velocity_y = 0.0, velocity_z = 0.0;
+float position_x = 0.0, position_y = 0.0, position_z = 0.0;
 
 // --- Setup Function ---
 void setup() {
@@ -178,7 +186,22 @@ void loop() {
         // Get roll/pitch rates if needed for D-term calculation based on rate error
         rate_roll = mpu.getGyroX();
         rate_pitch = mpu.getGyroY();
+        // Get accelerometer data for position estimation
+        acc_x = mpu.getAccX();
+        acc_y = mpu.getAccY();
+        acc_z = mpu.getAccZ();
 
+        // --- Basic Position Estimation (Dead Reckoning - Highly Inaccurate without Gravity Compensation/Filtering) ---
+        // Integrate acceleration to get velocity (m/s)
+        // NOTE: This simple integration does NOT account for gravity! True linear acceleration requires subtracting gravity vector based on orientation.
+        velocity_x += acc_x * 9.81 * DELTA_T;
+        velocity_y += acc_y * 9.81 * DELTA_T;
+        velocity_z += acc_z * 9.81 * DELTA_T; // Assumes acc_z includes gravity
+
+        // Integrate velocity to get position (m)
+        position_x += velocity_x * DELTA_T;
+        position_y += velocity_y * DELTA_T;
+        position_z += velocity_z * DELTA_T;
 
         // --- Arming Logic ---
         if (!armed) {
@@ -262,7 +285,6 @@ void loop() {
          esc4.writeMicroseconds(MIN_PWM);
     }
 
-
     // --- Loop Timing ---
     // Wait until the desired loop time has passed (e.g., 4000us for 250Hz)
     // This helps keep PID calculations consistent.
@@ -288,6 +310,9 @@ void loop() {
         Serial.print(" M2:"); Serial.print(motor2_speed);
         Serial.print(" M3:"); Serial.print(motor3_speed);
         Serial.print(" M4:"); Serial.println(motor4_speed);
+        // Serial.print(" | Pos X:"); Serial.print(position_x);
+        // Serial.print(" Y:"); Serial.print(position_y);
+        // Serial.print(" Z:"); Serial.println(position_z);
         last_print_time = millis();
     }
     */
@@ -342,4 +367,13 @@ void reset_pid() {
     pid_output_roll = 0;
     pid_output_pitch = 0;
     pid_output_yaw = 0;
+
+    // Reset position and velocity estimates
+    velocity_x = 0.0;
+    velocity_y = 0.0;
+    velocity_z = 0.0;
+    position_x = 0.0;
+    position_y = 0.0;
+    position_z = 0.0;
+    Serial.println("PID and Position Estimates Reset."); // Added message
 }
