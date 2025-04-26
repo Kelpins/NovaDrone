@@ -10,7 +10,7 @@ void setup(){
   Wire.begin();
 
   byte status = mpu.begin();
-  while (status!=0){} // stop if could not connect to MPU
+  while (status!=0){Serial.println("broken");} // stop if could not connect to MPU
   delay(1000);
   mpu.calcOffsets(true, true);
 }
