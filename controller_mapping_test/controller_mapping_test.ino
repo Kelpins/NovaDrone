@@ -202,10 +202,10 @@ double* adjustPitch() {
     timer2 = millis();
   }
 
-  double f_cw = 1.0 - ((difference + 2.0) * 0.25);
-  double b_cw = (difference + 2.0) * 0.25;
-  double f_ccw = (difference + 2.0) * 0.25;
-  double b_ccw = 1.0 - ((difference + 2.0) * 0.25);
+  double f_cw = (difference + 2.0) * 0.5;
+  double b_cw = 1.0 - ((difference + 2.0) * 0.5);
+  double f_ccw = (difference + 2.0) * 0.5;
+  double b_ccw = 1.0 - ((difference + 2.0) * 0.5);
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -231,10 +231,10 @@ double* adjustRoll() {
     timer3 = millis();
   }
 
-  double f_cw = (difference + 2.0) * 0.25;
-  double b_cw = 1.0 - ((difference + 2.0) * 0.25);
-  double f_ccw = (difference + 2.0) * 0.25;
-  double b_ccw = 1.0 - ((difference + 2.0) * 0.25);
+  double f_cw = 1.0 - ((difference + 2.0) * 0.5);
+    double b_cw = (difference + 2.0) * 0.5;
+  double f_ccw = 1.0 - ((difference + 2.0) * 0.5);
+  double b_ccw = (difference + 2.0) * 0.5;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -261,10 +261,10 @@ double* adjustYaw() {
     timer4 = millis();
   }
 
-  double f_cw = (difference + 2.0) * 0.25;
-  double b_cw = (difference + 2.0) * 0.25;
-  double f_ccw = 1.0 - ((difference + 2.0) * 0.25);
-  double b_ccw = 1.0 - ((difference + 2.0) * 0.25);
+  double f_cw = (difference + 2.0) * 0.5;
+  double b_cw = (difference + 2.0) * 0.5;
+  double f_ccw = 1.0 - ((difference + 2.0) * 0.5);
+  double b_ccw = 1.0 - ((difference + 2.0) * 0.5);
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
