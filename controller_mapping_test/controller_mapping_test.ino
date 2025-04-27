@@ -48,7 +48,7 @@ double f_ccw_scalar = 0.5;
 double b_ccw_scalar = 0.5;
 
 // scalar affecting smoothness of movements
-const double scalar_change = 0.00025;
+const double scalar_change = 0.0025;
 
 // prep Servo library for usage (wrapping the ledc pins)
 Servo esc[4];
@@ -79,12 +79,16 @@ void setup(){
   Serial.begin(9600);
   //SerialBT.begin("ZippyZoom");
   Wire.begin();
-
   byte status = mpu.begin();
+
+  delay(2000);
+
   if (status != 0){Serial.println("IMU disconnected");/*//SerialBT.println("IMU disconnected");*/}
   while (status!=0){Serial.println("IMU disconnected");delay(20);} // stop if could not connect to MPU
+
   if (pulseIn(ppm_pin, HIGH, 25000) < 1000) {Serial.println("RX disconnected");}
   while (pulseIn(ppm_pin, HIGH, 25000) < 1000) {Serial.println("RX disconnected");delay(20);}
+
   delay(1000);
   mpu.calcOffsets(true, true);
 
@@ -179,11 +183,12 @@ void updateStates() {
 
 }
 
-void adjustPitch() {
+double* adjustPitch() {
 
   // target angle (-20 -> 20) given a c_out (1000 -> 2000);
   double target_pitch = (1500.0 - cout_pitch) / 25.0;
-  double current_pitch = imu_pitch;
+  int adjusted_pitch = imu_pitch / 0.25;
+  double current_pitch = adjusted_pitch * 0.25;
 
   //calculates how much power should go to each motor based on the difference in pitches
   //should use PID; direct voltage control is okay for now
@@ -194,22 +199,25 @@ void adjustPitch() {
 
   if (millis() - timer2 > 1000) {
     Serial.print("pitch difference: ");Serial.println(difference);
-    //SerialBT.print("pitch difference: ");Serial.println(difference);
     timer2 = millis();
   }
 
-  f_cw_scalar = f_cw_scalar + (difference * scalar_change);
-  b_cw_scalar = b_cw_scalar - (difference * scalar_change);
-  f_ccw_scalar = f_ccw_scalar + (difference * scalar_change);
-  b_ccw_scalar = b_ccw_scalar - (difference * scalar_change);
+  double f_cw = 1.0 - ((difference + 2.0) * 0.25);
+  double b_cw = (difference + 2.0) * 0.25;
+  double f_ccw = (difference + 2.0) * 0.25;
+  double b_ccw = 1.0 - ((difference + 2.0) * 0.25);
+
+  double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
+  return out_arr;
 
 }
 
-void adjustRoll() {
+double* adjustRoll() {
 
   // target angle (-20 -> 20) given a c_out (1000 -> 2000);
   double target_roll = (1500.0 - cout_roll) / 25.0;
-  double current_roll = imu_roll;
+  int adjusted_roll = imu_roll / 0.25;
+  double current_roll = adjusted_roll * 0.25;
 
   //calculates how much power should go to each motor based on the difference in pitches
   //should use PID; direct voltage control is okay for now
@@ -219,24 +227,27 @@ void adjustRoll() {
   double difference = (0.025) * (target_roll - current_roll);
 
   if (millis() - timer3 > 1000) {
-    Serial.print("roll difference: ");Serial.println(difference);
-    //SerialBT.print("roll difference: ");Serial.println(difference);
+    Serial.print("roll difference2: ");Serial.println(difference);
     timer3 = millis();
   }
 
-  f_cw_scalar = f_cw_scalar + (difference * scalar_change);
-  b_cw_scalar = b_cw_scalar - (difference * scalar_change);
-  f_ccw_scalar = f_ccw_scalar - (difference * scalar_change);
-  b_ccw_scalar = b_ccw_scalar + (difference * scalar_change);
+  double f_cw = (difference + 2.0) * 0.25;
+  double b_cw = 1.0 - ((difference + 2.0) * 0.25);
+  double f_ccw = (difference + 2.0) * 0.25;
+  double b_ccw = 1.0 - ((difference + 2.0) * 0.25);
+
+  double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
+  return out_arr;
 
 }
 
 //TODO: NEEDS ANGLE WRAPPING (can't go 360 lmao)
-void adjustYaw() {
+double* adjustYaw() {
 
-  // target angle (-20 -> 20) given a c_out (1000 -> 2000);
-  double target_yaw = (1500.0 - cout_yaw) / 25.0;
-  double current_yaw = imu_yaw;
+  // target angle (-50 -> 50) given a c_out (1000 -> 2000);
+  double target_yaw = (1500.0 - cout_yaw) / 10.0;
+  int adjusted_yaw = imu_yaw / 0.25;
+  double current_yaw = adjusted_yaw * 0.25;
 
   //calculates how much power should go to each motor based on the difference in pitches
   //should use PID; direct voltage control is okay for now
@@ -246,15 +257,17 @@ void adjustYaw() {
   double difference = (0.025) * (target_yaw - current_yaw);
 
   if (millis() - timer4 > 1000) {
-    Serial.println(difference);
-    //SerialBT.println(difference);
+    Serial.print("yaw difference: ");Serial.println(difference);
     timer4 = millis();
   }
 
-  f_cw_scalar = f_cw_scalar + (difference * scalar_change);
-  b_cw_scalar = b_cw_scalar + (difference * scalar_change);
-  f_ccw_scalar = f_ccw_scalar - (difference * scalar_change);
-  b_ccw_scalar = b_ccw_scalar - (difference * scalar_change);
+  double f_cw = (difference + 2.0) * 0.25;
+  double b_cw = (difference + 2.0) * 0.25;
+  double f_ccw = 1.0 - ((difference + 2.0) * 0.25);
+  double b_ccw = 1.0 - ((difference + 2.0) * 0.25);
+
+  double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
+  return out_arr;
 
 }
 
@@ -262,25 +275,32 @@ void adjustThrottle() {}
 
 void updateMotorVoltages() {
 
-  adjustThrottle();
-  adjustPitch();
-  adjustRoll();
-  //adjustYaw();
+  //look more 
+  //throttleVals = adjustThrottle();
+  double* pitchVals = adjustPitch();
+  double* rollVals = adjustRoll();
+  //double* yawVals = adjustYaw();
+
+  f_cw_scalar = (pitchVals[0] + rollVals[0]) / 2.0;
+  b_cw_scalar = (pitchVals[1] + rollVals[1]) / 2.0;
+  f_ccw_scalar = (pitchVals[2] + rollVals[2]) / 2.0;
+  b_ccw_scalar = (pitchVals[3] + rollVals[3]) / 2.0;
 
   v_scalar = (cout_throttle - 1000.0) / 1000.0;
   if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 900) {
     v_scalar = 0.0;
   }
 
+  //constrain motor scalars 0 <= scalar <= 1
   double f_cw_volt = 1000.0 * (f_cw_scalar * v_scalar + 1.0);
   double b_cw_volt = 1000.0 * (b_cw_scalar * v_scalar + 1.0);
   double f_ccw_volt = 1000.0 * (f_ccw_scalar * v_scalar + 1.0);
   double b_ccw_volt = 1000.0 * (b_ccw_scalar * v_scalar + 1.0);
 
-  setPWM(f_cw_pin, f_cw_volt);
-  setPWM(b_cw_pin, b_cw_volt);
-  setPWM(f_ccw_pin, f_ccw_volt);
-  setPWM(b_ccw_pin, b_ccw_volt);
+  //setPWM(f_cw_pin, f_cw_volt);
+  //setPWM(b_cw_pin, b_cw_volt);
+  //setPWM(f_ccw_pin, f_ccw_volt);
+  //setPWM(b_ccw_pin, b_ccw_volt);
 
 }
 
