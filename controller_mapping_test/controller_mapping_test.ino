@@ -198,7 +198,7 @@ double* adjustPitch() {
   double difference = (0.025) * (target_pitch - current_pitch);
 
   if (millis() - timer2 > 1000) {
-    Serial.print("pitch difference: ");Serial.println(difference);
+    Serial.print("pitch difference2: ");Serial.println(difference);
     timer2 = millis();
   }
 
@@ -232,7 +232,7 @@ double* adjustRoll() {
   }
 
   double f_cw = 1.0 - ((difference + 2.0) * 0.5);
-    double b_cw = (difference + 2.0) * 0.5;
+  double b_cw = (difference + 2.0) * 0.5;
   double f_ccw = 1.0 - ((difference + 2.0) * 0.5);
   double b_ccw = (difference + 2.0) * 0.5;
 
