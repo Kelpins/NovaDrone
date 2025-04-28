@@ -32,3 +32,4 @@
 *.app
 
 .DS_Store
+wifi_OTA/arduino_secrets.h.cpp
