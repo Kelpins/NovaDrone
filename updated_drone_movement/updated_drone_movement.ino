@@ -7,8 +7,8 @@
 #include <ArduinoOTA.h>
 
 // WiFi Credentials
-const char* ssid = "Arsema-10"; // Replace with your SSID
-const char* password = "filmona1"; // Replace with your Password
+const char* ssid = "SIMOMIFI_G0U0_2.4GHz"; // Replace with your SSID
+const char* password = "DwAJi54E"; // Replace with your Password
 
 // 192.168.76.215 -- use this ip in putty to connect to telnet server
 // Telnet Server
