@@ -1,5 +1,7 @@
 #include "Wire.h"
-#include <MPU6050_light.h>
+//#include <MPU6050_light.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BNO055.h>
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
@@ -13,7 +15,8 @@ const char* password = "filmona1"; // Replace with your Password
 WiFiServer wifiServer(23);   // TCP server on port 23 (Telnet)
 WiFiClient telnetClient;
 
-MPU6050 mpu(Wire);
+//MPU6050 mpu(Wire);
+Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 
 //all prop & receiver pins (digital)
 const int ppm_pin = 8;
@@ -206,12 +209,21 @@ void setup(){
 
   //SerialBT.begin("ZippyZoom"); // Removed Bluetooth
   Wire.begin();
-  byte status = mpu.begin();
+  //byte status = mpu.begin();
+
+  // Initialize BNO055 sensor - Loop until successful
+  printlnOutput("Attempting to initialize BNO055...");
+  while (!bno.begin()) {
+    // Failed to connect
+    printlnOutput("BNO055 not detected. Retrying in 1 second...");
+    delay(1000); // Wait 1 second before retrying
+  }
+  printlnOutput("BNO055 Detected!"); // Confirmation after successful connection
 
   delay(2000);
 
-  if (status != 0){printlnOutput("IMU disconnected");}
-  while (status!=0){printlnOutput("IMU disconnected");delay(20);}
+  //if (status != 0){printlnOutput("IMU disconnected");}
+  //while (status!=0){printlnOutput("IMU disconnected");delay(20);}
 
   // --- Enhanced RX Check ---
   printOutput("Checking RX on pin "); printlnOutput((double)ppm_pin);
@@ -239,7 +251,11 @@ void setup(){
   // --- End Enhanced RX Check ---
 
   delay(1000);
-  mpu.calcOffsets(true, true);
+  //mpu.calcOffsets(true, true);
+
+  bno.setExtCrystalUse(true);
+  printlnOutput("BNO055 IMU Initialized");
+  delay(100);
 
   printlnOutput("imu connected - arming escs");
 
@@ -275,7 +291,11 @@ void setup(){
 
 void updateStates() {
 
-  mpu.update();
+  //mpu.update();
+
+  sensors_event_t event;
+  bno.getEvent(&event); 
+  
   cout_roll = channelValues[0]; // Channel 1 - tilting/moving left to right (roll control)
   cout_pitch = channelValues[1]; // Channel 2 - tilting/moving forward and back (pitch control)
   cout_throttle = channelValues[2]; // Channel 3 - power to motor (throttle control)
@@ -283,12 +303,16 @@ void updateStates() {
   cout_vra = channelValues[4]; // Channel 5 - first knob
   cout_vrb = channelValues[5]; // Channel 6 - second knob
 
-  imu_roll = mpu.getAngleY();
-  imu_pitch = mpu.getAngleX();
-  imu_yaw = mpu.getAngleZ();
+  //imu_roll = mpu.getAngleY();
+  //imu_pitch = mpu.getAngleX();
+  //imu_yaw = mpu.getAngleZ();
+  
+  imu_roll = event.orientation.x;
+  imu_pitch = event.orientation.y;
+  imu_yaw = event.orientation.z;
 
   if (millis() - timer > 1000) {
-    printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
+    //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
     printOutput(F("   X: ")); printOutput(imu_pitch); // controls pitch
     printOutput("\t| Y: ");  printOutput(imu_roll); // controls roll
     printOutput("\t| Z: ");   printlnOutput(imu_yaw); // controlls yaw
