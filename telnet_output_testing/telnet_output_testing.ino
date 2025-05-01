@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 
-const char* ssid = "Mainframe ID.1248X";
-const char* password = "novadrone";
+const char* ssid = "SIMOMIFI_G0U0_2.4GHz";
+const char* password = "DwAJi54E";
 
 // 192.168.76.215 -- use this ip in putty to connect to telnet server
 WiFiServer wifiServer(23);   // TCP server on port 23 (Telnet)
