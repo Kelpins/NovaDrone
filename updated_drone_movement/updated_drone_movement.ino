@@ -11,6 +11,9 @@
 const char* ssid = "SIMOMIFI_G0U0_2.4GHz";
 const char* password = "DwAJi54E";
 
+// MySecureOTApass
+
+
 // 192.168.76.215 -- use this ip in putty to connect to telnet server
 // telnet server
 WiFiServer wifiServer(23);
