@@ -49,6 +49,8 @@ int cout_yaw = 1500;
 int cout_vra = 1000;
 int cout_vrb = 1000;
 
+double current_yaw_target = 0.0;
+
 // imu output declarations
 double imu_roll = 0.0;
 double imu_pitch = 0.0;
@@ -64,7 +66,7 @@ double f_ccw_scalar = 0.5;
 double b_ccw_scalar = 0.5;
 
 // scalar affecting smoothness of movements
-const double scalar_change = 0.0025;
+const double scalar_change = 0.035;
 
 double x_offset = 0.0;
 double y_offset = 0.0;
@@ -329,15 +331,15 @@ void updateStates() {
   //imu_pitch = mpu.getAngleX();
   //imu_yaw = mpu.getAngleZ();
   
-  imu_roll = event.orientation.x - x_offset;
-  imu_pitch = event.orientation.z - z_offset;
-  imu_yaw = event.orientation.y - y_offset;
+  imu_yaw = event.orientation.x - x_offset;
+  imu_pitch = event.orientation.y - y_offset;
+  imu_roll = event.orientation.z - z_offset;
 
   if (millis() - timer > 1000) {
     //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
-    printOutput(F("   X: ")); printOutput(imu_pitch); // controls pitch
-    printOutput("\t| Y: ");   printOutput(imu_roll); // controls roll
-    printOutput("\t| Z: ");   printlnOutput(imu_yaw); // controlls yaw
+    printOutput(F("   yaw: ")); printOutput(imu_yaw); // controls pitch
+    printOutput("\t| pitch: ");   printOutput(imu_pitch); // controls roll
+    printOutput("\t| roll: ");   printlnOutput(imu_roll); // controlls yaw
 
     printOutput("Roll: ");        printOutput(cout_roll);
     printOutput(" | Pitch: ");    printOutput(cout_pitch);
@@ -346,11 +348,11 @@ void updateStates() {
     printOutput(" | Aux1: ");     printOutput(cout_vra);
     printOutput(" | Aux2: ");     printlnOutput(cout_vrb);
 
-    printOutput("vscl: "); printlnOutput(v_scalar);
-    printOutput(" fcw: "); printlnOutput(f_cw_scalar);
-    printOutput(" bcw: "); printlnOutput(b_cw_scalar);
-    printOutput("fccw: "); printlnOutput(f_ccw_scalar);
-    printOutput("bccw: "); printlnOutput(b_ccw_scalar);
+    //printOutput("vscl: "); printlnOutput(v_scalar);
+    //printOutput(" fcw: "); printlnOutput(f_cw_scalar);
+    //printOutput(" bcw: "); printlnOutput(b_cw_scalar);
+    //printOutput("fccw: "); printlnOutput(f_ccw_scalar);
+    //printOutput("bccw: "); printlnOutput(b_ccw_scalar);
     
 
     timer = millis();
@@ -406,9 +408,9 @@ double* adjustRoll() {
     timer3 = millis();
   }
 
-  double f_cw = 0.5 - difference;
+  double f_cw = 0.5 + difference;
   double b_cw = 0.5 - difference;
-  double f_ccw = 0.5 + difference;
+  double f_ccw = 0.5 - difference;
   double b_ccw = 0.5 + difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
@@ -416,37 +418,59 @@ double* adjustRoll() {
 
 }
 
+void updateYawTarget() {
+
+  //1000 < cout_yaw < 2000
+  double adjusted_yaw = (1500.0 - cout_yaw) / 1000.0;
+  current_yaw_target -= (scalar_change * adjusted_yaw);
+  if (current_yaw_target < 0.0) {
+    current_yaw_target += 360;
+  }
+  else if (current_yaw_target > 360.0) {
+    current_yaw_target -= 360;
+  }
+
+}
+
 //TODO: NEEDS ANGLE WRAPPING (can't go 360 lmao)
 double* adjustYaw() {
 
-  // target angle (-50 -> 50) given a c_out (1000 -> 2000);
-  double target_yaw = (1500.0 - cout_yaw) / 10.0;
-  int adjusted_yaw = imu_yaw / 2.5;
-  double current_yaw = adjusted_yaw * 2.5;
+  updateYawTarget();
 
   // calculates how much power should go to each motor based on the difference in pitches
   // should use PID; direct voltage control is okay for now
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.025) * (target_yaw - current_yaw);
+
+  double difference = current_yaw_target - imu_yaw;
+  if (difference > 180.0) {
+    difference -= 360.0;
+  }
+  else if (difference < -180.0) {
+    difference += 360.0;
+  }
+
+  double scaled_difference = difference / 90.0;
+  scaled_difference = constrain(scaled_difference, -1, 1);
 
   if (millis() - timer4 > 1000) {
+    printOutput("current_yaw_target: ");printlnOutput(current_yaw_target);
+    printOutput("imy_yaw: ");printlnOutput(imu_yaw);
     printOutput("yaw difference: ");printlnOutput(difference);
+    printOutput("scaled yaw difference: ");printlnOutput(scaled_difference);
     timer4 = millis();
   }
 
-  double f_cw = 0.5 + difference;
-  double b_cw = 0.5 + difference;
-  double f_ccw = 0.5 - difference;
-  double b_ccw = 0.5 - difference;
+  double f_cw = 0.5 - scaled_difference;
+  double b_cw = 0.5 - scaled_difference;
+  double f_ccw = 0.5 + scaled_difference;
+  double b_ccw = 0.5 + scaled_difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
 
 }
-
-void adjustThrottle() {}
 
 void updateMotorVoltages() {
 
@@ -466,21 +490,22 @@ void updateMotorVoltages() {
     v_scalar = 0.0;
   }
 
-  if (millis() - timer5 > 1000) {
-    printOutput("fcw pre: ");printlnOutput(f_cw_scalar);
-    printOutput("bcw pre: ");printlnOutput(b_cw_scalar);
-    printOutput("fccw pre: ");printlnOutput(f_ccw_scalar);
-    printOutput("bccw pre: ");printlnOutput(b_ccw_scalar);
-    timer5 = millis();
-  }
-
   // normalize motor scalars
   double max_val = max(max(f_cw_scalar, b_cw_scalar), max(f_ccw_scalar, b_ccw_scalar));
-  if (max_val > 1.0) {
-    f_cw_scalar /= max_val;
-    b_cw_scalar /= max_val;
-    f_ccw_scalar /= max_val;
-    b_ccw_scalar /= max_val;
+  f_cw_scalar /= max_val;
+  b_cw_scalar /= max_val;
+  f_ccw_scalar /= max_val;
+  b_ccw_scalar /= max_val;
+
+  if (millis() - timer5 > 1000) {
+
+    printOutput("vscl: "); printlnOutput(v_scalar);
+    printOutput(" fcw: "); printlnOutput(f_cw_scalar);
+    printOutput(" bcw: "); printlnOutput(b_cw_scalar);
+    printOutput("fccw: "); printlnOutput(f_ccw_scalar);
+    printOutput("bccw: "); printlnOutput(b_ccw_scalar);
+
+    timer5 = millis();
   }
 
   // calculate final motor voltages with base offset
