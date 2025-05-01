@@ -308,8 +308,8 @@ void updateStates() {
   //imu_yaw = mpu.getAngleZ();
   
   imu_roll = event.orientation.x;
-  imu_pitch = event.orientation.y;
-  imu_yaw = event.orientation.z;
+  imu_pitch = event.orientation.z;
+  imu_yaw = event.orientation.y;
 
   if (millis() - timer > 1000) {
     //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
