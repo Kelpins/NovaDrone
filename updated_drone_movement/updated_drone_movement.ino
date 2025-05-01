@@ -5,6 +5,7 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
+#include <ESPmDNS.h> // For hostname resolution
 
 // WiFi credentials
 const char* ssid = "SIMOMIFI_G0U0_2.4GHz";
@@ -167,6 +168,15 @@ void setupWiFiTelnet() {
   printlnOutput("\nWi-Fi connected!");
   printOutput("IP address: ");
   printlnOutput(WiFi.localIP());
+  
+  // Start mDNS responder
+  if (MDNS.begin("esp32-nova-drone")) { 
+    printlnOutput("mDNS responder started. Hostname: esp32-nova-drone.local");
+    // Advertise Telnet service
+    MDNS.addService("telnet", "tcp", 23);
+  } else {
+    printlnOutput("Error starting mDNS");
+  }
   delay(100);
 
   ArduinoOTA.setHostname("esp32-nova-drone");
