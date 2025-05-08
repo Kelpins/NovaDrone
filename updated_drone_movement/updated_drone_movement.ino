@@ -35,6 +35,7 @@ unsigned long timer2 = 0;
 unsigned long timer3 = 0;
 unsigned long timer4 = 0;
 unsigned long timer5 = 0;
+unsigned long timer6 = 0;
 
 // variables all volatile because they are utilized in an interrupt
 volatile unsigned long lastTime = 0;
@@ -331,9 +332,9 @@ void updateStates() {
   //imu_pitch = mpu.getAngleX();
   //imu_yaw = mpu.getAngleZ();
   
-  imu_yaw = event.orientation.x - x_offset;
-  imu_pitch = event.orientation.y - y_offset;
-  imu_roll = event.orientation.z - z_offset;
+  imu_yaw = event.orientation.x;// - x_offset;
+  imu_pitch = event.orientation.z - z_offset;
+  imu_roll = event.orientation.y - y_offset;
 
   if (millis() - timer > 1000) {
     //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
@@ -363,16 +364,20 @@ void updateStates() {
 double* adjustPitch() {
 
   // target angle (-20 -> 20) given a c_out (1000 -> 2000);
+  if (abs(cout_pitch - 1500.0) <= 5) {
+    cout_pitch = 1500.0;
+  }
   double target_pitch = (1500.0 - cout_pitch) / 25.0;
-  int adjusted_pitch = imu_pitch / 0.25;
-  double current_pitch = adjusted_pitch * 0.25;
 
+  if (abs(imu_pitch) <= 1.0) {
+    imu_pitch = 0.0;
+  }
   // calculates how much power should go to each motor based on the difference in pitches
   // should use PID; direct voltage control is okay for now
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.025) * (target_pitch - current_pitch);
+  double difference = (0.025) * (target_pitch - imu_pitch);
 
   if (millis() - timer2 > 1000) {
     printOutput("pitch difference: ");printlnOutput(difference);
@@ -392,26 +397,31 @@ double* adjustPitch() {
 double* adjustRoll() {
 
   // target angle (-20 -> 20) given a c_out (1000 -> 2000);
+  if (abs(cout_roll - 1500.0) <= 5) {
+    cout_roll = 1500.0;
+  }
   double target_roll = (1500.0 - cout_roll) / 25.0;
-  int adjusted_roll = imu_roll / 0.25;
-  double current_roll = adjusted_roll * 0.25;
+  
+  if (abs(imu_roll) <= 1.0) {
+    imu_roll = 0.0;
+  }
 
   // calculates how much power should go to each motor based on the difference in pitches
   // should use PID; direct voltage control is okay for now
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.025) * (target_roll - current_roll);
+  double difference = (0.025) * (target_roll - imu_roll);
 
   if (millis() - timer3 > 1000) {
     printOutput("roll difference: ");printlnOutput(difference);
     timer3 = millis();
   }
 
-  double f_cw = 0.5 + difference;
-  double b_cw = 0.5 - difference;
-  double f_ccw = 0.5 - difference;
-  double b_ccw = 0.5 + difference;
+  double f_cw = 0.5 - difference;
+  double b_cw = 0.5 + difference;
+  double f_ccw = 0.5 + difference;
+  double b_ccw = 0.5 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -421,6 +431,9 @@ double* adjustRoll() {
 void updateYawTarget() {
 
   //1000 < cout_yaw < 2000
+  if (abs(cout_yaw - 1500.0) <= 15.0) {
+    cout_yaw = 1500.0;
+  }
   double adjusted_yaw = (1500.0 - cout_yaw) / 1000.0;
   current_yaw_target -= (scalar_change * adjusted_yaw);
   if (current_yaw_target < 0.0) {
@@ -443,7 +456,17 @@ double* adjustYaw() {
   // -1: max difference forward
   // 1: max difference backward
 
+  if (abs(imu_yaw) <= 0.625) {
+    imu_yaw = 0.0;
+  }
+
   double difference = current_yaw_target - imu_yaw;
+  
+  if (millis() - timer6 > 1000) {
+    printOutput("yaw difference b4: ");printlnOutput(difference);
+    timer6 = millis();
+  }
+
   if (difference > 180.0) {
     difference -= 360.0;
   }
@@ -452,7 +475,7 @@ double* adjustYaw() {
   }
 
   double scaled_difference = difference / 90.0;
-  scaled_difference = constrain(scaled_difference, -1, 1);
+  scaled_difference = constrain(scaled_difference, -0.5, 0.5);
 
   if (millis() - timer4 > 1000) {
     printOutput("current_yaw_target: ");printlnOutput(current_yaw_target);
