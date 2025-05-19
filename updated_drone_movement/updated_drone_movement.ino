@@ -35,7 +35,6 @@ unsigned long timer2 = 0;
 unsigned long timer3 = 0;
 unsigned long timer4 = 0;
 unsigned long timer5 = 0;
-unsigned long timer6 = 0;
 
 // variables all volatile because they are utilized in an interrupt
 volatile unsigned long lastTime = 0;
@@ -338,16 +337,17 @@ void updateStates() {
 
   if (millis() - timer > 1000) {
     //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
-    printOutput(F("   yaw: ")); printOutput(imu_yaw); // controls pitch
-    printOutput("\t| pitch: ");   printOutput(imu_pitch); // controls roll
-    printOutput("\t| roll: ");   printlnOutput(imu_roll); // controlls yaw
+    printlnOutput("");
+    printOutput("Iy: "); printOutput(imu_yaw); // controls pitch
+    printOutput("Ip: ");   printOutput(imu_pitch); // controls roll
+    printOutput("Ir: ");   printlnOutput(imu_roll); // controlls yaw
 
-    printOutput("Roll: ");        printOutput(cout_roll);
-    printOutput(" | Pitch: ");    printOutput(cout_pitch);
-    printOutput(" | Throttle: "); printOutput(cout_throttle);
-    printOutput(" | Yaw: ");      printOutput(cout_yaw);
-    printOutput(" | Aux1: ");     printOutput(cout_vra);
-    printOutput(" | Aux2: ");     printlnOutput(cout_vrb);
+    printOutput("Cr: ");        printOutput(cout_roll);
+    printOutput("Cp: ");    printOutput(cout_pitch);
+    printOutput("Ct: "); printOutput(cout_throttle);
+    printOutput("Cy: ");      printOutput(cout_yaw);
+    // printOutput(" | Aux1: ");     printOutput(cout_vra);
+    // printOutput(" | Aux2: ");     printlnOutput(cout_vrb);
 
     //printOutput("vscl: "); printlnOutput(v_scalar);
     //printOutput(" fcw: "); printlnOutput(f_cw_scalar);
@@ -380,7 +380,7 @@ double* adjustPitch() {
   double difference = (0.025) * (target_pitch - imu_pitch);
 
   if (millis() - timer2 > 1000) {
-    printOutput("pitch difference: ");printlnOutput(difference);
+    printOutput("p∆: ");printlnOutput(difference);
     timer2 = millis();
   }
 
@@ -414,7 +414,7 @@ double* adjustRoll() {
   double difference = (0.025) * (target_roll - imu_roll);
 
   if (millis() - timer3 > 1000) {
-    printOutput("roll difference: ");printlnOutput(difference);
+    printOutput("r∆: ");printlnOutput(difference);
     timer3 = millis();
   }
 
@@ -461,11 +461,6 @@ double* adjustYaw() {
   }
 
   double difference = current_yaw_target - imu_yaw;
-  
-  if (millis() - timer6 > 1000) {
-    printOutput("yaw difference b4: ");printlnOutput(difference);
-    timer6 = millis();
-  }
 
   if (difference > 180.0) {
     difference -= 360.0;
@@ -478,10 +473,10 @@ double* adjustYaw() {
   scaled_difference = constrain(scaled_difference, -0.5, 0.5);
 
   if (millis() - timer4 > 1000) {
-    printOutput("current_yaw_target: ");printlnOutput(current_yaw_target);
-    printOutput("imy_yaw: ");printlnOutput(imu_yaw);
-    printOutput("yaw difference: ");printlnOutput(difference);
-    printOutput("scaled yaw difference: ");printlnOutput(scaled_difference);
+    printOutput("yT: ");printlnOutput(current_yaw_target);
+    printOutput("Iy: ");printlnOutput(imu_yaw);
+    printOutput("y∆: ");printlnOutput(difference);
+    printOutput("sy∆: ");printlnOutput(scaled_difference);
     timer4 = millis();
   }
 
