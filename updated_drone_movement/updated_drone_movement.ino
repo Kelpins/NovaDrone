@@ -355,11 +355,11 @@ void updateStates() {
     //printOutput("fccw: "); printlnOutput(f_ccw_scalar);
     //printOutput("bccw: "); printlnOutput(b_ccw_scalar);
     
-
+    
     timer = millis();
   }
 
-}
+  }
 
 double* adjustPitch() {
 
