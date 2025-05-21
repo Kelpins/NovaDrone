@@ -335,7 +335,7 @@ void updateStates() {
   imu_pitch = event.orientation.z - z_offset;
   imu_roll = event.orientation.y - y_offset;
 
-  if (millis() - timer > 1000) {
+  if (millis() - timer > 100) {
     //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
     printlnOutput("");
     printOutput("Iy: "); printOutput(imu_yaw); // controls pitch
@@ -379,7 +379,7 @@ double* adjustPitch() {
   // 1: max difference backward
   double difference = (0.025) * (target_pitch - imu_pitch);
 
-  if (millis() - timer2 > 1000) {
+  if (millis() - timer2 > 100) {
     printOutput("p∆: ");printlnOutput(difference);
     timer2 = millis();
   }
@@ -413,7 +413,7 @@ double* adjustRoll() {
   // 1: max difference backward
   double difference = (0.025) * (target_roll - imu_roll);
 
-  if (millis() - timer3 > 1000) {
+  if (millis() - timer3 > 100) {
     printOutput("r∆: ");printlnOutput(difference);
     timer3 = millis();
   }
@@ -472,11 +472,10 @@ double* adjustYaw() {
   double scaled_difference = difference / 90.0;
   scaled_difference = constrain(scaled_difference, -0.5, 0.5);
 
-  if (millis() - timer4 > 1000) {
+  if (millis() - timer4 > 100) {
     printOutput("yT: ");printlnOutput(current_yaw_target);
     printOutput("Iy: ");printlnOutput(imu_yaw);
     printOutput("y∆: ");printlnOutput(difference);
-    printOutput("sy∆: ");printlnOutput(scaled_difference);
     timer4 = millis();
   }
 
@@ -515,7 +514,7 @@ void updateMotorVoltages() {
   f_ccw_scalar /= max_val;
   b_ccw_scalar /= max_val;
 
-  if (millis() - timer5 > 1000) {
+  if (millis() - timer5 > 100) {
 
     printOutput("vscl: "); printlnOutput(v_scalar);
     printOutput(" fcw: "); printlnOutput(f_cw_scalar);
