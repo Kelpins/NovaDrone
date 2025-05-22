@@ -352,10 +352,12 @@ void updateStates() {
                                              // Ensure roll is also handled correctly if it wraps. For now, direct subtraction.
 
   if (millis() - timer > 1000) {
-    printOutput("IMU Yaw: "); printOutput(imu_yaw);
-    printOutput("	| Pitch: "); printOutput(imu_pitch);
-    printOutput("	| Roll: "); printlnOutput(imu_roll);
+    // IMU data formatted for graph.py
+    printOutput("Iy: "); printOutput(imu_yaw);
+    printOutput(" Ip: "); printOutput(imu_pitch);
+    printOutput(" Ir: "); printlnOutput(imu_roll);
 
+    // Controller data (kept original formatting for this part)
     printOutput("Ctrl Roll: "); printOutput(cout_roll);
     printOutput(" | Pitch: "); printOutput(cout_pitch);
     printOutput(" | Throttle: "); printOutput(cout_throttle);
