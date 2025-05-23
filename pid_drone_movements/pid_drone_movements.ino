@@ -86,6 +86,11 @@ double b_ccw_scalar = 0.5;
 
 const double scalar_change = 0.035; // User's original factor for yaw target update rate
 
+// Global variables for differences calculated in adjust functions (for telnet output)
+double pitch_diff = 0.0;
+double roll_diff = 0.0;
+double yaw_diff = 0.0;
+
 double x_offset = 0.0;
 double y_offset = 0.0;
 double z_offset = 0.0;
@@ -160,7 +165,7 @@ void setPWM(int pin, int pulse) {
 }
 
 void setupWiFiTelnet() {
-  Serial.begin(115200); // Using 115200 for potentially faster data transfer
+  Serial.begin(9600); // Changed from 115200 to match updated_drone_movement.ino
   
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -213,7 +218,8 @@ void handleTelnetClient() {
       if (telnetClient) telnetClient.stop();
       telnetClient = wifiServer.available();
       printlnOutput("New Telnet client connected");
-      printlnOutput("ESP32 PID Controller - Sending data...");
+      printlnOutput("ESP32 PID Drone Controller - Sending CSV data...");
+      printlnOutput("Format: imu_yaw,imu_pitch,imu_roll,cout_roll,cout_pitch,cout_throttle,cout_yaw,pitch_diff,roll_diff,current_yaw_target,yaw_diff,v_scalar,f_cw_scalar,b_cw_scalar,f_ccw_scalar,b_ccw_scalar");
     } else {
       WiFiClient newClient = wifiServer.available();
       newClient.stop();
@@ -346,24 +352,30 @@ void updateStates() {
   
   // Apply offsets and map to drone's coordinate system
   // User: x is yaw, y is pitch, z is roll
-  imu_yaw = normalizeAngle180(event.orientation.x - x_offset);
+  imu_yaw = normalizeAngle180(event.orientation.x); // No offset applied, matching updated_drone_movement
   imu_pitch = event.orientation.y - y_offset; // BNO055 pitch is typically -90 to +90
   imu_roll = event.orientation.z - z_offset;   // BNO055 roll is typically -180 to +180 (or -90 to +90 if only one axis used)
                                              // Ensure roll is also handled correctly if it wraps. For now, direct subtraction.
 
-  if (millis() - timer > 1000) {
-    // IMU data formatted for graph.py
-    printOutput("Iy: "); printOutput(imu_yaw);
-    printOutput(" Ip: "); printOutput(imu_pitch);
-    printOutput(" Ir: "); printlnOutput(imu_roll);
-
-    // Controller data (kept original formatting for this part)
-    printOutput("Ctrl Roll: "); printOutput(cout_roll);
-    printOutput(" | Pitch: "); printOutput(cout_pitch);
-    printOutput(" | Throttle: "); printOutput(cout_throttle);
-    printOutput(" | Yaw: "); printOutput(cout_yaw);
-    printOutput(" | Aux1: "); printOutput(cout_vra);
-    printOutput(" | Aux2: "); printlnOutput(cout_vrb);
+  if (millis() - timer > 100) {  // Changed from 1000ms to 100ms
+    // Construct the CSV string (matching updated_drone_movement format)
+    String dataString = String(imu_yaw) + "," +
+                        String(imu_pitch) + "," +
+                        String(imu_roll) + "," +
+                        String(cout_roll) + "," +
+                        String(cout_pitch) + "," +
+                        String(cout_throttle) + "," +
+                        String(cout_yaw) + "," +
+                        String(pitch_diff) + "," +
+                        String(roll_diff) + "," +
+                        String(current_yaw_target) + "," +
+                        String(yaw_diff) + "," +
+                        String(v_scalar) + "," +
+                        String(f_cw_scalar) + "," +
+                        String(b_cw_scalar) + "," +
+                        String(f_ccw_scalar) + "," +
+                        String(b_ccw_scalar);
+    printlnOutput(dataString);
     
     timer = millis();
   }
@@ -383,6 +395,9 @@ void adjustPitchPID(double current_pitch_angle, int controller_pitch_input, doub
 
     // 3. Scale PID output
     double scaled_pid_output = pid_output * PID_OUTPUT_SCALING_PITCH;
+    
+    // Capture pitch error for telnet output (matching original's logic)
+    pitch_diff = scaled_pid_output; // This represents the correction being applied
 
     // 4. Calculate motor contributions for pitch
     // Positive scaled_pid_output commands nose down (front motors decrease, rear increase)
@@ -404,6 +419,9 @@ void adjustRollPID(double current_roll_angle, int controller_roll_input, double 
                                      roll_error_integral, roll_previous_error, dt);
     // 3. Scale PID output
     double scaled_pid_output = pid_output * PID_OUTPUT_SCALING_ROLL;
+    
+    // Capture roll error for telnet output
+    roll_diff = scaled_pid_output; // This represents the correction being applied
 
     // 4. Calculate motor contributions for roll
     // Positive scaled_pid_output commands roll left (left motors decrease, right increase)
@@ -425,6 +443,9 @@ void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller
     // 2. Calculate Yaw Error (shortest angle)
     double yaw_error = current_yaw_target - current_yaw_angle;
     yaw_error = normalizeAngle180(yaw_error); // Ensure error is shortest path
+    
+    // Capture raw yaw difference for telnet output (before PID processing)
+    yaw_diff = yaw_error;
 
     // 3. Calculate PID Output (target for PID is current + shortest_error)
     double effective_target_yaw = current_yaw_angle + yaw_error;
@@ -512,6 +533,8 @@ void updateMotorVoltagesPID(double dt) {
   b_ccw_scalar = max(0.0, b_ccw_scalar);
 
 
+  // Debug output commented out to prevent interference with CSV data stream
+  /*
   if (millis() - timer_pid_debug > 1000) {
     printOutput("PID Targets P: "); printOutput(constrain((1500.0 - cout_pitch) / 25.0, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL));
     printOutput(" R: "); printOutput(constrain((1500.0 - cout_roll) / 25.0, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL));
@@ -524,6 +547,7 @@ void updateMotorVoltagesPID(double dt) {
     printOutput("V_Scalar: "); printlnOutput(v_scalar);
     timer_pid_debug = millis();
   }
+  */
 
   // Calculate final motor voltages with base offset
   double f_cw_volt = 1000.0 + (f_cw_scalar * v_scalar * 1000.0);
