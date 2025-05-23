@@ -68,6 +68,11 @@ double b_ccw_scalar = 0.5;
 // scalar affecting smoothness of movements
 const double scalar_change = 0.035;
 
+// Global variables for differences calculated in adjust functions
+double pitch_diff = 0.0;
+double roll_diff = 0.0;
+double yaw_diff = 0.0; // Raw difference before scaling
+
 double x_offset = 0.0;
 double y_offset = 0.0;
 double z_offset = 0.0;
@@ -336,25 +341,24 @@ void updateStates() {
   imu_roll = event.orientation.y - y_offset;
 
   if (millis() - timer > 100) {
-    //printOutput(F("TEMP: ")); printlnOutput(mpu.getTemp());
-    printlnOutput("");
-    printOutput("Iy: "); printOutput(imu_yaw); // controls pitch
-    printOutput("Ip: ");   printOutput(imu_pitch); // controls roll
-    printOutput("Ir: ");   printlnOutput(imu_roll); // controlls yaw
-
-    printOutput("Cr: ");        printOutput(cout_roll);
-    printOutput("Cp: ");    printOutput(cout_pitch);
-    printOutput("Ct: "); printOutput(cout_throttle);
-    printOutput("Cy: ");      printOutput(cout_yaw);
-    // printOutput(" | Aux1: ");     printOutput(cout_vra);
-    // printOutput(" | Aux2: ");     printlnOutput(cout_vrb);
-
-    //printOutput("vscl: "); printlnOutput(v_scalar);
-    //printOutput(" fcw: "); printlnOutput(f_cw_scalar);
-    //printOutput(" bcw: "); printlnOutput(b_cw_scalar);
-    //printOutput("fccw: "); printlnOutput(f_ccw_scalar);
-    //printOutput("bccw: "); printlnOutput(b_ccw_scalar);
-    
+    // Construct the CSV string
+    String dataString = String(imu_yaw) + "," +
+                        String(imu_pitch) + "," +
+                        String(imu_roll) + "," +
+                        String(cout_roll) + "," +
+                        String(cout_pitch) + "," +
+                        String(cout_throttle) + "," +
+                        String(cout_yaw) + "," +
+                        String(pitch_diff) + "," +
+                        String(roll_diff) + "," +
+                        String(current_yaw_target) + "," +
+                        String(yaw_diff) + "," +
+                        String(v_scalar) + "," +
+                        String(f_cw_scalar) + "," +
+                        String(b_cw_scalar) + "," +
+                        String(f_ccw_scalar) + "," +
+                        String(b_ccw_scalar);
+    printlnOutput(dataString);
     
     timer = millis();
   }
@@ -378,11 +382,9 @@ double* adjustPitch() {
   // -1: max difference forward
   // 1: max difference backward
   double difference = (0.025) * (target_pitch - imu_pitch);
+  pitch_diff = difference; // Capture pitch difference
 
-  if (millis() - timer2 > 100) {
-    printOutput("p∆: ");printlnOutput(difference);
-    timer2 = millis();
-  }
+  // Removed printOutput for p∆
 
   double f_cw = 0.5 + difference;
   double b_cw = 0.5 - difference;
@@ -412,11 +414,9 @@ double* adjustRoll() {
   // -1: max difference forward
   // 1: max difference backward
   double difference = (0.025) * (target_roll - imu_roll);
+  roll_diff = difference; // Capture roll difference
 
-  if (millis() - timer3 > 100) {
-    printOutput("r∆: ");printlnOutput(difference);
-    timer3 = millis();
-  }
+  // Removed printOutput for r∆
 
   double f_cw = 0.5 - difference;
   double b_cw = 0.5 + difference;
@@ -461,6 +461,7 @@ double* adjustYaw() {
   }
 
   double difference = current_yaw_target - imu_yaw;
+  yaw_diff = difference; // Capture yaw difference before scaling
 
   if (difference > 180.0) {
     difference -= 360.0;
@@ -472,12 +473,7 @@ double* adjustYaw() {
   double scaled_difference = difference / 90.0;
   scaled_difference = constrain(scaled_difference, -0.5, 0.5);
 
-  if (millis() - timer4 > 100) {
-    printOutput("yT: ");printlnOutput(current_yaw_target);
-    printOutput("Iy: ");printlnOutput(imu_yaw);
-    printOutput("y∆: ");printlnOutput(difference);
-    timer4 = millis();
-  }
+  // Removed printOutput for yT, Iy, y∆
 
   double f_cw = 0.5 - scaled_difference;
   double b_cw = 0.5 - scaled_difference;
@@ -514,16 +510,7 @@ void updateMotorVoltages() {
   f_ccw_scalar /= max_val;
   b_ccw_scalar /= max_val;
 
-  if (millis() - timer5 > 100) {
-
-    printOutput("vscl: "); printlnOutput(v_scalar);
-    printOutput(" fcw: "); printlnOutput(f_cw_scalar);
-    printOutput(" bcw: "); printlnOutput(b_cw_scalar);
-    printOutput("fccw: "); printlnOutput(f_ccw_scalar);
-    printOutput("bccw: "); printlnOutput(b_ccw_scalar);
-
-    timer5 = millis();
-  }
+  // Removed printOutput for vscl, fcw, bcw, fccw, bccw
 
   // calculate final motor voltages with base offset
   double f_cw_volt = 1000.0 + (f_cw_scalar * v_scalar * 1000.0);

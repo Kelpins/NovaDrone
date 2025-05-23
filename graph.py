@@ -38,6 +38,17 @@ class DroneDataPlotter:
         self.ctrl_throttle_data = deque(maxlen=self.max_data_points)
         self.ctrl_yaw_data = deque(maxlen=self.max_data_points)
         
+        # New data fields from CSV
+        self.pitch_diff_data = deque(maxlen=self.max_data_points)
+        self.roll_diff_data = deque(maxlen=self.max_data_points)
+        self.current_yaw_target_data = deque(maxlen=self.max_data_points)
+        self.yaw_diff_data = deque(maxlen=self.max_data_points)
+        self.v_scalar_data = deque(maxlen=self.max_data_points)
+        self.f_cw_scalar_data = deque(maxlen=self.max_data_points)
+        self.b_cw_scalar_data = deque(maxlen=self.max_data_points)
+        self.f_ccw_scalar_data = deque(maxlen=self.max_data_points)
+        self.b_ccw_scalar_data = deque(maxlen=self.max_data_points)
+        
         self.start_time = time.time()
         self.setup_plot()
         
@@ -125,73 +136,103 @@ class DroneDataPlotter:
         self.start_time_dt = self.end_time - timedelta(seconds=self.window_size)
     
     def read_data(self):
-        """Read and parse data from the socket stream."""
+        """Read and parse data from the socket stream (CSV format)."""
         try:
-            # Read the first line containing yaw, pitch, roll
             line = self.stream.readline()
             if not line:
-                print("Connection closed by remote host")
+                # print("Connection closed or no data received.") # Less verbose
                 return None
-                
-            # Keep reading until we find a line with three space-separated numbers
-            while True:
-                # Check if this is the data line (yaw pitch roll)
-                parts = line.strip().split()
-                if len(parts) == 3 and all(part.replace('.', '').replace('-', '').isdigit() for part in parts):
-                    try:
-                        yaw, pitch, roll = map(float, parts)
-                        current_time = datetime.now()
-                        
-                        # Read and parse the debug lines to get controller values
-                        debug_data = {}
-                        for _ in range(8):  # Read next 8 debug lines
-                            debug_line = self.stream.readline().strip()
-                            if ':' in debug_line:
-                                key, value = debug_line.split(':', 1)
-                                debug_data[key.strip()] = value.strip()
-                        
-                        # Extract controller values from debug data
-                        ctrl_roll = float(debug_data.get('Cr', '1500'))
-                        ctrl_pitch = float(debug_data.get('Cp', '1500'))
-                        ctrl_throttle = float(debug_data.get('Ct', '1000'))
-                        ctrl_yaw = float(debug_data.get('Cy', '1500'))
-                        
-                        # Normalize angles to -180 to 180 range
-                        yaw = (yaw + 180) % 360 - 180
-                        pitch = (pitch + 180) % 360 - 180
-                        roll = (roll + 180) % 360 - 180
-                        
-                        # Scale controller values to match IMU range
-                        ctrl_roll = (ctrl_roll - 1500) / (500/45)  # Map 1000-2000 to -90 to 90
-                        ctrl_pitch = (ctrl_pitch - 1500) / (500/45)  # Map 1000-2000 to -90 to 90
-                        ctrl_yaw = (ctrl_yaw - 1500) / (500/90)  # Map 1000-2000 to -180 to 180
-                        
-                        return current_time, yaw, pitch, roll, ctrl_roll, ctrl_pitch, ctrl_throttle, ctrl_yaw
-                        
-                    except (ValueError, KeyError) as e:
-                        print(f"Error parsing data: {e}")
-                        return None
-                
-                # Read next line if current line doesn't match
-                line = self.stream.readline()
-                if not line:
-                    return None
-                
+            
+            line = line.strip()
+            if not line: # Handle empty lines after strip
+                return None
+
+            values_str = line.split(',')
+            
+            if len(values_str) != 16:
+                print(f"Malformed data line: Expected 16 values, got {len(values_str)}. Line: '{line}'")
+                return None
+            
+            try:
+                # Convert all values to float
+                vals = [float(v) for v in values_str]
+            except ValueError as e:
+                print(f"Error converting data to float: {e}. Line: '{line}'")
+                return None
+
+            current_time = datetime.now()
+
+            # Assign to variables based on new CSV format
+            # 1. imu_yaw, 2. imu_pitch, 3. imu_roll
+            imu_yaw = vals[0]
+            imu_pitch = vals[1]
+            imu_roll = vals[2]
+            
+            # 4. cout_roll, 5. cout_pitch, 6. cout_throttle, 7. cout_yaw
+            cout_roll = vals[3]
+            cout_pitch = vals[4]
+            cout_throttle = vals[5] # This is ctrl_throttle
+            cout_yaw = vals[6]
+            
+            # 8. pitch_diff, 9. roll_diff, 10. current_yaw_target, 11. yaw_diff
+            pitch_diff = vals[7]
+            roll_diff = vals[8]
+            current_yaw_target = vals[9]
+            yaw_diff = vals[10]
+            
+            # 12. v_scalar, 13. f_cw_scalar, 14. b_cw_scalar, 15. f_ccw_scalar, 16. b_ccw_scalar
+            v_scalar = vals[11]
+            f_cw_scalar = vals[12]
+            b_cw_scalar = vals[13]
+            f_ccw_scalar = vals[14]
+            b_ccw_scalar = vals[15]
+
+            # Apply normalization to IMU data
+            imu_yaw = (imu_yaw + 180) % 360 - 180
+            imu_pitch = (imu_pitch + 180) % 360 - 180
+            imu_roll = (imu_roll + 180) % 360 - 180
+            
+            # Apply scaling to controller data (using cout_ variables as input)
+            scaled_cout_roll = (cout_roll - 1500) / (500/45)
+            scaled_cout_pitch = (cout_pitch - 1500) / (500/45)
+            scaled_cout_yaw = (cout_yaw - 1500) / (500/90)
+            # cout_throttle is used directly
+
+            # Append new data to their deques
+            self.pitch_diff_data.append(pitch_diff)
+            self.roll_diff_data.append(roll_diff)
+            self.current_yaw_target_data.append(current_yaw_target)
+            self.yaw_diff_data.append(yaw_diff)
+            self.v_scalar_data.append(v_scalar)
+            self.f_cw_scalar_data.append(f_cw_scalar)
+            self.b_cw_scalar_data.append(b_cw_scalar)
+            self.f_ccw_scalar_data.append(f_ccw_scalar)
+            self.b_ccw_scalar_data.append(b_ccw_scalar)
+            
+            # Return values for existing plots
+            # Note: using scaled controller values for plotting, and original cout_throttle
+            return current_time, imu_yaw, imu_pitch, imu_roll, \
+                   scaled_cout_roll, scaled_cout_pitch, cout_throttle, scaled_cout_yaw
+
+        except socket.timeout:
+            # print("Socket timeout during readline.") # Can be too verbose
             return None
         except Exception as e:
-            print(f"Error reading data: {e}")
+            print(f"Error reading or processing CSV data: {e}")
             import traceback
             traceback.print_exc()
             return None
     
     def update_plot(self, frame):
         """Update the plot with new data."""
-        data = self.read_data()
+        data = self.read_data() # This now calls the new CSV parsing logic
         
         if data:
-            current_time, yaw, pitch, roll, ctrl_roll, ctrl_pitch, ctrl_throttle, ctrl_yaw = data
+            # Unpack the 8 values returned by read_data for direct plotting
+            current_time, yaw, pitch, roll, \
+            ctrl_roll, ctrl_pitch, ctrl_throttle, ctrl_yaw = data
             
-            # Update data storage
+            # Update data storage for timestamps and the 8 directly plotted values
             self.timestamps.append(current_time)
             
             # IMU data
@@ -199,11 +240,16 @@ class DroneDataPlotter:
             self.pitch_data.append(pitch)
             self.roll_data.append(roll)
             
-            # Controller data
+            # Controller data (scaled values and original throttle)
             self.ctrl_roll_data.append(ctrl_roll)
             self.ctrl_pitch_data.append(ctrl_pitch)
             self.ctrl_throttle_data.append(ctrl_throttle)
             self.ctrl_yaw_data.append(ctrl_yaw)
+            
+            # The 9 additional values (pitch_diff, roll_diff, etc.) are already
+            # appended to their respective deques (self.pitch_diff_data, etc.)
+            # within the read_data() method itself. No further action needed here
+            # for this subtask, as plotting them is not required.
             
             # Update plot data - IMU
             self.ln_yaw.set_data(self.timestamps, self.yaw_data)
