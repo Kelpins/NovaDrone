@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from collections import deque
 
 class DroneDataPlotter:
-    def __init__(self, host, port, window_size=30, update_interval=50):
+    def __init__(self, host, port, window_size=30, update_interval=200):  # Default to 5Hz (200ms)
         """
         Initialize the DroneDataPlotter.
         
@@ -18,13 +18,13 @@ class DroneDataPlotter:
             host (str): IP address of the drone
             port (int): Port number for the telnet connection
             window_size (int): Time window to display in seconds
-            update_interval (int): Plot update interval in milliseconds
+            update_interval (int): Plot update interval in milliseconds (default: 200ms for 5Hz)
         """
         self.host = host
         self.port = port
         self.window_size = window_size
         self.update_interval = update_interval
-        self.max_data_points = 1000  # Maximum number of data points to keep in memory
+        self.max_data_points = 10000  # Maximum number of data points to keep in memory
         
         # Initialize data storage with deques for efficient appending/popping
         self.timestamps = deque(maxlen=self.max_data_points)
@@ -97,12 +97,12 @@ class DroneDataPlotter:
         self.ax_yaw.axhline(0, color='gray', linestyle='--', alpha=0.5)
         self.ax_yaw.legend(loc='upper right')
         
-        # Pitch plot (-45° to 45°)
+        # Pitch plot (-90° to 90°)
         self.ln_pitch, = self.ax_pitch.plot([], [], 'g-', lw=1.5, label='Pitch')
         self.ln_pitch_ctrl, = self.ax_pitch.plot([], [], 'g--', lw=1, alpha=0.7, label='Pitch (Ctrl)')
         self.ax_pitch.set_ylabel('Pitch')
-        self.ax_pitch.set_ylim(-60, 60)
-        self.ax_pitch.set_yticks(range(-45, 46, 15))
+        self.ax_pitch.set_ylim(-90, 90)
+        self.ax_pitch.set_yticks(range(-90, 91, 30))
         self.ax_pitch.axhline(0, color='gray', linestyle='--', alpha=0.5)
         self.ax_pitch.legend(loc='upper right')
         
@@ -142,17 +142,17 @@ class DroneDataPlotter:
             if not line:
                 # print("Connection closed or no data received.") # Less verbose
                 return None
-            
+                
             line = line.strip()
             if not line: # Handle empty lines after strip
                 return None
 
             values_str = line.split(',')
             
-            if len(values_str) != 16:
-                print(f"Malformed data line: Expected 16 values, got {len(values_str)}. Line: '{line}'")
+            if len(values_str) != 17:  # Updated to expect 17 values
+                print(f"Malformed data line: Expected 17 values, got {len(values_str)}. Line: '{line}'")
                 return None
-            
+                
             try:
                 # Convert all values to float
                 vals = [float(v) for v in values_str]
@@ -161,119 +161,87 @@ class DroneDataPlotter:
                 return None
 
             current_time = datetime.now()
-
-            # Assign to variables based on new CSV format
-            # 1. imu_yaw, 2. imu_pitch, 3. imu_roll
-            imu_yaw = vals[0]
-            imu_pitch = vals[1]
-            imu_roll = vals[2]
             
-            # 4. cout_roll, 5. cout_pitch, 6. cout_throttle, 7. cout_yaw
-            cout_roll = vals[3]
-            cout_pitch = vals[4]
-            cout_throttle = vals[5] # This is ctrl_throttle
-            cout_yaw = vals[6]
+            # Parse IMU data (first 3 values)
+            imu_roll = float(values_str[0])
+            imu_pitch = float(values_str[1])
+            imu_yaw = float(values_str[2])
             
-            # 8. pitch_diff, 9. roll_diff, 10. current_yaw_target, 11. yaw_diff
-            pitch_diff = vals[7]
-            roll_diff = vals[8]
-            current_yaw_target = vals[9]
-            yaw_diff = vals[10]
+            # Parse controller output (next 4 values)
+            cout_roll = float(values_str[3])
+            cout_pitch = float(values_str[4])
+            cout_throttle = float(values_str[5])
+            cout_yaw = float(values_str[6])
             
-            # 12. v_scalar, 13. f_cw_scalar, 14. b_cw_scalar, 15. f_ccw_scalar, 16. b_ccw_scalar
-            v_scalar = vals[11]
-            f_cw_scalar = vals[12]
-            b_cw_scalar = vals[13]
-            f_ccw_scalar = vals[14]
-            b_ccw_scalar = vals[15]
-
-            # Apply normalization to IMU data
-            imu_yaw = (imu_yaw + 180) % 360 - 180
-            imu_pitch = (imu_pitch + 180) % 360 - 180
-            imu_roll = (imu_roll + 180) % 360 - 180
+            # Scale controller outputs for better visualization
+            scaled_cout_roll = (cout_roll - 1500) / 500  # Scale to ±1
+            scaled_cout_pitch = (cout_pitch - 1500) / 500
+            scaled_cout_yaw = (cout_yaw - 1500) / 500
             
-            # Apply scaling to controller data (using cout_ variables as input)
-            scaled_cout_roll = (cout_roll - 1500) / (500/45)
-            scaled_cout_pitch = (cout_pitch - 1500) / (500/45)
-            scaled_cout_yaw = (cout_yaw - 1500) / (500/90)
-            # cout_throttle is used directly
-
-            # Append new data to their deques
-            self.pitch_diff_data.append(pitch_diff)
-            self.roll_diff_data.append(roll_diff)
-            self.current_yaw_target_data.append(current_yaw_target)
-            self.yaw_diff_data.append(yaw_diff)
-            self.v_scalar_data.append(v_scalar)
-            self.f_cw_scalar_data.append(f_cw_scalar)
-            self.b_cw_scalar_data.append(b_cw_scalar)
-            self.f_ccw_scalar_data.append(f_ccw_scalar)
-            self.b_ccw_scalar_data.append(b_ccw_scalar)
+            # Store only the essential data for plotting
+            self.timestamps.append(current_time)
             
-            # Return values for existing plots
-            # Note: using scaled controller values for plotting, and original cout_throttle
-            return current_time, imu_yaw, imu_pitch, imu_roll, \
-                   scaled_cout_roll, scaled_cout_pitch, cout_throttle, scaled_cout_yaw
-
-        except socket.timeout:
-            # print("Socket timeout during readline.") # Can be too verbose
-            return None
+            # IMU data
+            self.yaw_data.append(imu_yaw)
+            self.pitch_data.append(imu_pitch)
+            self.roll_data.append(imu_roll)
+            
+            # Controller data (scaled)
+            self.ctrl_roll_data.append(scaled_cout_roll)
+            self.ctrl_pitch_data.append(scaled_cout_pitch)
+            self.ctrl_yaw_data.append(scaled_cout_yaw)
+            self.ctrl_throttle_data.append((cout_throttle - 1000) / 1000.0)  # Scale throttle to 0-1
+            
+            # Return values for plotting
+            return (current_time, imu_yaw, imu_pitch, imu_roll,
+                   scaled_cout_roll, scaled_cout_pitch, 
+                   (cout_throttle - 1000) / 1000.0, scaled_cout_yaw)
+                    
         except Exception as e:
-            print(f"Error reading or processing CSV data: {e}")
+            print(f"Error in read_data: {e}")
             import traceback
             traceback.print_exc()
             return None
     
     def update_plot(self, frame):
         """Update the plot with new data."""
-        data = self.read_data() # This now calls the new CSV parsing logic
+        try:
+            # Read and process data
+            if self.read_data() is not None:
+                # Only update plot if we have enough data points
+                if len(self.timestamps) > 1:
+                    # Calculate time window
+                    current_time = self.timestamps[-1]
+                    start_time = current_time - timedelta(seconds=self.window_size)
+                    
+                    # Update plot data - IMU
+                    self.ln_yaw.set_data(self.timestamps, self.yaw_data)
+                    self.ln_pitch.set_data(self.timestamps, self.pitch_data)
+                    self.ln_roll.set_data(self.timestamps, self.roll_data)
+                    
+                    # Update plot data - Controller
+                    self.ln_yaw_ctrl.set_data(self.timestamps, self.ctrl_yaw_data)
+                    self.ln_pitch_ctrl.set_data(self.timestamps, self.ctrl_pitch_data)
+                    self.ln_roll_ctrl.set_data(self.timestamps, self.ctrl_roll_data)
+                    self.ln_throttle.set_data(self.timestamps, self.ctrl_throttle_data)
+                    
+                    # Update time window for all subplots
+                    for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll, self.ax_throttle]:
+                        ax.set_xlim(start_time, current_time)
+                    
+                    # Keep fixed Y-axis limits
+                    pass
+                    
+                    # Update title with current time and data rate
+                    self.fig.suptitle(f'Drone Data - {current_time.strftime("%H:%M:%S")} - {len(self.timestamps)} points')
+                    
+        except Exception as e:
+            print(f"Error in update_plot: {e}")
         
-        if data:
-            # Unpack the 8 values returned by read_data for direct plotting
-            current_time, yaw, pitch, roll, \
-            ctrl_roll, ctrl_pitch, ctrl_throttle, ctrl_yaw = data
-            
-            # Update data storage for timestamps and the 8 directly plotted values
-            self.timestamps.append(current_time)
-            
-            # IMU data
-            self.yaw_data.append(yaw)
-            self.pitch_data.append(pitch)
-            self.roll_data.append(roll)
-            
-            # Controller data (scaled values and original throttle)
-            self.ctrl_roll_data.append(ctrl_roll)
-            self.ctrl_pitch_data.append(ctrl_pitch)
-            self.ctrl_throttle_data.append(ctrl_throttle)
-            self.ctrl_yaw_data.append(ctrl_yaw)
-            
-            # The 9 additional values (pitch_diff, roll_diff, etc.) are already
-            # appended to their respective deques (self.pitch_diff_data, etc.)
-            # within the read_data() method itself. No further action needed here
-            # for this subtask, as plotting them is not required.
-            
-            # Update plot data - IMU
-            self.ln_yaw.set_data(self.timestamps, self.yaw_data)
-            self.ln_pitch.set_data(self.timestamps, self.pitch_data)
-            self.ln_roll.set_data(self.timestamps, self.roll_data)
-            
-            # Update plot data - Controller
-            self.ln_yaw_ctrl.set_data(self.timestamps, self.ctrl_yaw_data)
-            self.ln_pitch_ctrl.set_data(self.timestamps, self.ctrl_pitch_data)
-            self.ln_roll_ctrl.set_data(self.timestamps, self.ctrl_roll_data)
-            self.ln_throttle.set_data(self.timestamps, self.ctrl_throttle_data)
-            
-            # Update time window
-            self.end_time = current_time
-            self.start_time_dt = self.end_time - timedelta(seconds=self.window_size)
-            
-            # Update x-axis limits for all subplots
-            for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll, self.ax_throttle]:
-                ax.set_xlim(self.start_time_dt, self.end_time)
-        
-        # Update title with current time
-        self.fig.suptitle(f'Drone Orientation Data - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-        
-        return self.ln_yaw, self.ln_pitch, self.ln_roll
+        # Return the artists to be updated
+        return [self.ln_yaw, self.ln_pitch, self.ln_roll, 
+                self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
+                self.ln_throttle]
     
     def init_plot(self):
         """Initialize the plot with empty data."""
@@ -299,23 +267,30 @@ class DroneDataPlotter:
             return
         
         try:
-            print("Starting data collection. Close the plot window to exit...")
+            print(f"Starting data collection at {self.update_interval}ms interval. Close the plot window to exit...")
+            print("Press Ctrl+C to stop")
+            
+            # Set up the animation
             self.ani = FuncAnimation(
                 self.fig, 
-                self.update_plot, 
-                init_func=self.init_plot, 
-                blit=False,  # Set to False since we have multiple artists to update
+                self.update_plot,
+                init_func=self.init_plot,
                 interval=self.update_interval,
-                cache_frame_data=False,
-                save_count=1000
+                blit=True,  # Enable blitting for better performance
+                cache_frame_data=False
             )
-            plt.show()
+            
+            # Use a more responsive backend if available
+            plt.ion()  # Turn on interactive mode
+            plt.show(block=True)  # Block until window is closed
+            
         except KeyboardInterrupt:
-            print("\nShutting down...")
+            print("\nShutdown requested...")
         except Exception as e:
             print(f"An error occurred: {e}")
         finally:
             self.cleanup()
+            plt.close('all')  # Ensure all plots are closed
     
     def cleanup(self):
         """Clean up resources."""
