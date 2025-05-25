@@ -1,0 +1,15 @@
+Starting Drone Data Plotter
+  Host: localhost
+  Port: 12345
+  Time Window: 10 seconds
+  Update Interval: 200 ms
+----------------------------------------
+Logging data to live_log_2025-05-25_17-22-41.csv
+Connected to localhost:12345
+Starting data collection at 200ms interval. Close the plot window to exit...
+Press Ctrl+C to stop
+Connection closed.
+Data logged to live_log_2025-05-25_17-22-41.csv
+Connection closed.
+Data logged to live_log_2025-05-25_17-22-41.csv
+Application terminated.

@@ -1,0 +1,1 @@
+timestamp,imu_roll,imu_pitch,imu_yaw,ctrl_roll,ctrl_pitch,ctrl_throttle,ctrl_yaw,pitch_diff,roll_diff,current_yaw_target,yaw_diff,data_field_11,v_scalar,f_cw_scalar,b_cw_scalar,f_ccw_scalar,b_ccw_scalar
