@@ -504,11 +504,20 @@ void updateMotorVoltages() {
   }
 
   // normalize motor scalars
-  double max_val = max(max(f_cw_scalar, b_cw_scalar), max(f_ccw_scalar, b_ccw_scalar));
+  
+  //OLD SCALARS
+
+  /*double max_val = max(max(f_cw_scalar, b_cw_scalar), max(f_ccw_scalar, b_ccw_scalar));
   f_cw_scalar /= max_val;
   b_cw_scalar /= max_val;
   f_ccw_scalar /= max_val;
-  b_ccw_scalar /= max_val;
+  b_ccw_scalar /= max_val;*/
+
+  //NEW SCALARS FOR MANUAL TESTING
+  f_cw_scalar = 1.0;
+  b_cw_scalar = 1.0;
+  f_ccw_scalar = 1.0;
+  b_ccw_scalar = 1.0;
 
   // Removed printOutput for vscl, fcw, bcw, fccw, bccw
 
