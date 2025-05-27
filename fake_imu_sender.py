@@ -39,68 +39,81 @@ def generate_data_line(counter):
     b_cw_scalar = ((counter + 2) % 10) / 10.0
     f_ccw_scalar = ((counter + 3) % 10) / 10.0
     b_ccw_scalar = ((counter + 4) % 10) / 10.0
+    dummy_extra_field = (counter % 5) / 5.0 # Cycles 0.0, 0.2, 0.4, 0.6, 0.8
     
     data = [
         imu_yaw, imu_pitch, imu_roll,
         cout_roll, cout_pitch, cout_throttle, cout_yaw,
         pitch_diff, roll_diff, current_yaw_target, yaw_diff,
-        v_scalar, f_cw_scalar, b_cw_scalar, f_ccw_scalar, b_ccw_scalar
+        v_scalar, f_cw_scalar, b_cw_scalar, f_ccw_scalar, b_ccw_scalar,
+        dummy_extra_field # This is the 17th data field (index 16)
     ]
     return ",".join(map(str, data)) + "\n"
 
 def main():
     global running
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.settimeout(1.0) # Timeout for accept
+    server_socket.settimeout(1.0) # For server_socket.accept()
+
     try:
         server_socket.bind((HOST, PORT))
         server_socket.listen(1)
         print(f"Fake IMU sender listening on {HOST}:{PORT}")
         print("Press Ctrl+C to stop.")
 
-        counter = 0
         client_socket = None
+        counter = 0
 
         while running:
             if client_socket is None:
                 try:
+                    print("Waiting for a connection...")
                     client_socket, addr = server_socket.accept()
-                    client_socket.settimeout(1.0) # Timeout for send/recv
+                    # No client-specific timeout for now, rely on send errors
                     print(f"Accepted connection from {addr}")
                 except socket.timeout:
-                    continue # No connection attempt, continue loop
+                    # Normal, no connection attempt in the last second
+                    pass
                 except Exception as e:
-                    if running: # Avoid error message if shutting down
+                    # Error during accept, client_socket remains None
+                    if running: # Only print if not shutting down
                         print(f"Error accepting connection: {e}")
-                    continue
-
-            if client_socket:
+                    pass # Continue to time.sleep
+            else: # if client_socket is not None
                 try:
-                    data_line = generate_data_line(counter)
+                    data_line = generate_data_line(counter) # Assumes 17 fields
                     client_socket.sendall(data_line.encode('utf-8'))
                     # print(f"Sent: {data_line.strip()}") # Uncomment for debugging
                     counter += 1
-                    time.sleep(0.1)  # Send data every 100ms
-                except socket.timeout:
-                    print("Socket timeout while sending data. Client might have disconnected.")
-                    client_socket.close()
-                    client_socket = None
-                except socket.error as e:
-                    print(f"Socket error: {e}. Client disconnected.")
-                    client_socket.close()
-                    client_socket = None
+                except (socket.error, BrokenPipeError, ConnectionResetError) as e:
+                    print(f"Socket error during send: {e}. Client disconnected.")
+                    try:
+                        client_socket.close()
+                    except socket.error:
+                        pass # Ignore errors during close if already bad
+                    client_socket = None # Reset to allow re-accepting
                 except Exception as e:
-                    print(f"An unexpected error occurred: {e}")
-                    client_socket.close()
-                    client_socket = None
-        
-    except Exception as e:
-        if running:
-            print(f"Server error: {e}")
+                    # Catch any other error during send
+                    if running: # Only print if not shutting down
+                        print(f"Unexpected error during send: {e}")
+                    try:
+                        client_socket.close()
+                    except socket.error:
+                        pass
+                    client_socket = None # Reset
+            
+            time.sleep(0.1) # Loop pause
+
+    except Exception as e: # Catch errors setting up the server socket itself
+        if running: # Only print if not shutting down
+            print(f"Server setup error: {e}")
     finally:
         print("Closing server socket.")
         if client_socket:
-            client_socket.close()
+            try:
+                client_socket.close()
+            except socket.error:
+                pass
         server_socket.close()
         print("Server shut down.")
 
