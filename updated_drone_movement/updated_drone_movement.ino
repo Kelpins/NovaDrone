@@ -493,33 +493,33 @@ void updateMotorVoltages() {
   double* rollVals = adjustRoll();
   double* yawVals = adjustYaw();
 
-  f_cw_scalar = (pitchVals[0] + rollVals[0] + yawVals[0]) / 3.0;
-  b_cw_scalar = (pitchVals[1] + rollVals[1] + yawVals[1]) / 3.0;
-  f_ccw_scalar = (pitchVals[2] + rollVals[2] + yawVals[2]) / 3.0;
-  b_ccw_scalar = (pitchVals[3] + rollVals[3] + yawVals[3]) / 3.0;
+  // adjust constants for physical motor power differentials
+  double f_cw_const = 1.0;
+  double b_cw_const = 0.0;
+  double f_ccw_const = 0.0; //most powerful
+  double b_ccw_const = 0.0;
+
+  f_cw_scalar = f_cw_const * (pitchVals[0] + rollVals[0] + yawVals[0]) / 3.0;
+  b_cw_scalar = b_cw_const * (pitchVals[1] + rollVals[1] + yawVals[1]) / 3.0;
+  f_ccw_scalar = f_ccw_const * (pitchVals[2] + rollVals[2] + yawVals[2]) / 3.0;
+  b_ccw_scalar = b_ccw_const * (pitchVals[3] + rollVals[3] + yawVals[3]) / 3.0;
 
   v_scalar = (cout_throttle - 1000.0) / 1000.0;
   if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 900) {
     v_scalar = 0.0;
   }
 
-  // normalize motor scalars
-  
-  //OLD SCALARS
-
-  /*double max_val = max(max(f_cw_scalar, b_cw_scalar), max(f_ccw_scalar, b_ccw_scalar));
+  double max_val = max(max(f_cw_scalar, b_cw_scalar), max(f_ccw_scalar, b_ccw_scalar));
   f_cw_scalar /= max_val;
   b_cw_scalar /= max_val;
   f_ccw_scalar /= max_val;
-  b_ccw_scalar /= max_val;*/
+  b_ccw_scalar /= max_val;
 
-  //NEW SCALARS FOR MANUAL TESTING
-  f_cw_scalar = 1.0;//0.9375;//0.955;
-  b_cw_scalar = 0.0;//0.995;
-  f_ccw_scalar = 0.0;//0.93;//0.965; //most powerful
-  b_ccw_scalar = 0.0;//0.9375;//0.9625;
-
-  // Removed printOutput for vscl, fcw, bcw, fccw, bccw
+  //**SET TO NEW SCALARS ONLY FOR MANUAL TESTING**
+  f_cw_scalar = f_cw_const;
+  b_cw_scalar = b_cw_const;
+  f_ccw_scalar = f_ccw_const;
+  b_ccw_scalar = b_ccw_const;
 
   // calculate final motor voltages with base offset
   double f_cw_volt = 1000.0 + (f_cw_scalar * v_scalar * 1000.0);
@@ -528,10 +528,10 @@ void updateMotorVoltages() {
   double b_ccw_volt = 1000.0 + (b_ccw_scalar * v_scalar * 1000.0);
 
   // constrain motor voltages 1000 <= volt <= 2000
-  f_cw_volt = constrain(f_cw_volt, 1050.0, 2000.0);
-  b_cw_volt = constrain(b_cw_volt, 1050.0, 2000.0);
-  f_ccw_volt = constrain(f_ccw_volt, 1050.0, 2000.0);
-  b_ccw_volt = constrain(b_ccw_volt, 1050.0, 2000.0);
+  f_cw_volt = constrain(f_cw_volt, 1075.0, 2000.0);
+  b_cw_volt = constrain(b_cw_volt, 1075.0, 2000.0);
+  f_ccw_volt = constrain(f_ccw_volt, 1075.0, 2000.0);
+  b_ccw_volt = constrain(b_ccw_volt, 1075.0, 2000.0);
 
   setPWM(f_cw_pin, f_cw_volt);
   setPWM(b_cw_pin, b_cw_volt);
