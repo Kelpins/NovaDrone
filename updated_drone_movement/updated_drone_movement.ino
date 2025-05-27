@@ -24,8 +24,8 @@ Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 
 //all prop & receiver pins (digital)
 const int ppm_pin = 8;
-const int f_cw_pin = 9;
-const int b_cw_pin = 10;
+const int f_cw_pin = 10;
+const int b_cw_pin = 9;
 const int f_ccw_pin = 11;
 const int b_ccw_pin = 12;
 
@@ -381,15 +381,15 @@ double* adjustPitch() {
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.025) * (target_pitch - imu_pitch);
+  double difference = (0.01) * (target_pitch - imu_pitch);
   pitch_diff = difference; // Capture pitch difference
 
   // Removed printOutput for p∆
 
-  double f_cw = 0.5 + difference;
-  double b_cw = 0.5 - difference;
-  double f_ccw = 0.5 + difference;
-  double b_ccw = 0.5 - difference;
+  double f_cw = 0.8 + difference;
+  double b_cw = 0.8 - difference;
+  double f_ccw = 0.8 + difference;
+  double b_ccw = 0.8 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -413,15 +413,15 @@ double* adjustRoll() {
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.025) * (target_roll - imu_roll);
+  double difference = (0.01) * (target_roll - imu_roll);
   roll_diff = difference; // Capture roll difference
 
   // Removed printOutput for r∆
 
-  double f_cw = 0.5 - difference;
-  double b_cw = 0.5 + difference;
-  double f_ccw = 0.5 + difference;
-  double b_ccw = 0.5 - difference;
+  double f_cw = 0.8 - difference;
+  double b_cw = 0.8 + difference;
+  double f_ccw = 0.8 + difference;
+  double b_ccw = 0.8 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -471,14 +471,14 @@ double* adjustYaw() {
   }
 
   double scaled_difference = difference / 90.0;
-  scaled_difference = constrain(scaled_difference, -0.5, 0.5);
+  scaled_difference = constrain(scaled_difference, -0.2, 0.2);
 
   // Removed printOutput for yT, Iy, y∆
 
-  double f_cw = 0.5 - scaled_difference;
-  double b_cw = 0.5 - scaled_difference;
-  double f_ccw = 0.5 + scaled_difference;
-  double b_ccw = 0.5 + scaled_difference;
+  double f_cw = 0.8 - scaled_difference;
+  double b_cw = 0.8 - scaled_difference;
+  double f_ccw = 0.8 + scaled_difference;
+  double b_ccw = 0.8 + scaled_difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -514,10 +514,10 @@ void updateMotorVoltages() {
   b_ccw_scalar /= max_val;*/
 
   //NEW SCALARS FOR MANUAL TESTING
-  f_cw_scalar = 1.0;
-  b_cw_scalar = 1.0;
-  f_ccw_scalar = 1.0;
-  b_ccw_scalar = 1.0;
+  f_cw_scalar = 1.0;//0.9375;//0.955;
+  b_cw_scalar = 0.0;//0.995;
+  f_ccw_scalar = 0.0;//0.93;//0.965; //most powerful
+  b_ccw_scalar = 0.0;//0.9375;//0.9625;
 
   // Removed printOutput for vscl, fcw, bcw, fccw, bccw
 
@@ -528,10 +528,10 @@ void updateMotorVoltages() {
   double b_ccw_volt = 1000.0 + (b_ccw_scalar * v_scalar * 1000.0);
 
   // constrain motor voltages 1000 <= volt <= 2000
-  f_cw_volt = constrain(f_cw_volt, 1000.0, 2000.0);
-  b_cw_volt = constrain(b_cw_volt, 1000.0, 2000.0);
-  f_ccw_volt = constrain(f_ccw_volt, 1000.0, 2000.0);
-  b_ccw_volt = constrain(b_ccw_volt, 1000.0, 2000.0);
+  f_cw_volt = constrain(f_cw_volt, 1050.0, 2000.0);
+  b_cw_volt = constrain(b_cw_volt, 1050.0, 2000.0);
+  f_ccw_volt = constrain(f_ccw_volt, 1050.0, 2000.0);
+  b_ccw_volt = constrain(b_ccw_volt, 1050.0, 2000.0);
 
   setPWM(f_cw_pin, f_cw_volt);
   setPWM(b_cw_pin, b_cw_volt);
