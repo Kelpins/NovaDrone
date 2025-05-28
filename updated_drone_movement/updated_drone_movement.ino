@@ -289,12 +289,13 @@ void setup(){
   printlnOutput("imu connected - arming escs");
 
   // "arming" each esc; basically setting it up to receive 1000 <= x <= 2000 microseconds of pwm, then sending it 1000 (motor off)
+
   esc[0].setPeriodHertz(50);
-  esc[0].attach(f_cw_pin, 1000, 2000);
+  esc[0].attach(b_cw_pin, 1000, 2000);
   esc[0].writeMicroseconds(1000);
 
   esc[1].setPeriodHertz(50);
-  esc[1].attach(b_cw_pin, 1000, 2000);
+  esc[1].attach(f_cw_pin, 1000, 2000);
   esc[1].writeMicroseconds(1000);
 
   esc[2].setPeriodHertz(50);
@@ -373,7 +374,7 @@ double* adjustPitch() {
   }
   double target_pitch = (1500.0 - cout_pitch) / 25.0;
 
-  if (abs(imu_pitch) <= 1.0) {
+  if (abs(imu_pitch) <= 2.0) {
     imu_pitch = 0.0;
   }
   // calculates how much power should go to each motor based on the difference in pitches
@@ -381,15 +382,15 @@ double* adjustPitch() {
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.01) * (target_pitch - imu_pitch);
+  double difference = (0.005) * (target_pitch - imu_pitch);
   pitch_diff = difference; // Capture pitch difference
 
   // Removed printOutput for p∆
 
-  double f_cw = 0.8 + difference;
-  double b_cw = 0.8 - difference;
-  double f_ccw = 0.8 + difference;
-  double b_ccw = 0.8 - difference;
+  double f_cw = 0.9 + difference;
+  double b_cw = 0.9 - difference;
+  double f_ccw = 0.9 + difference;
+  double b_ccw = 0.9 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -404,7 +405,7 @@ double* adjustRoll() {
   }
   double target_roll = (1500.0 - cout_roll) / 25.0;
   
-  if (abs(imu_roll) <= 1.0) {
+  if (abs(imu_roll) <= 2.0) {
     imu_roll = 0.0;
   }
 
@@ -413,15 +414,15 @@ double* adjustRoll() {
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.01) * (target_roll - imu_roll);
+  double difference = (0.005) * (target_roll - imu_roll);
   roll_diff = difference; // Capture roll difference
 
   // Removed printOutput for r∆
 
-  double f_cw = 0.8 - difference;
-  double b_cw = 0.8 + difference;
-  double f_ccw = 0.8 + difference;
-  double b_ccw = 0.8 - difference;
+  double f_cw = 0.9 - difference;
+  double b_cw = 0.9 + difference;
+  double f_ccw = 0.9 + difference;
+  double b_ccw = 0.9 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -471,12 +472,12 @@ double* adjustYaw() {
   }
 
   double scaled_difference = difference / 90.0;
-  scaled_difference = constrain(scaled_difference, -0.2, 0.2);
+  scaled_difference = constrain(scaled_difference, -0.1, 0.1);
 
-  double f_cw = 0.8 - scaled_difference;
-  double b_cw = 0.8 - scaled_difference;
-  double f_ccw = 0.8 + scaled_difference;
-  double b_ccw = 0.8 + scaled_difference;
+  double f_cw = 0.9 - scaled_difference;
+  double b_cw = 0.9 - scaled_difference;
+  double f_ccw = 0.9 + scaled_difference;
+  double b_ccw = 0.9 + scaled_difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -492,10 +493,10 @@ void updateMotorVoltages() {
   double* yawVals = adjustYaw();
 
   // adjust constants for physical motor power differentials
-  double f_cw_const = 1.0;
-  double b_cw_const = 0.0;
-  double f_ccw_const = 0.0; //most powerful
-  double b_ccw_const = 0.0;
+  double f_cw_const = 0.96725; // spinning b_cw*
+  double b_cw_const = 0.9825; // spinning f_cw
+  double f_ccw_const = 0.9625; // spinning f_ccw // most powerful
+  double b_ccw_const = 0.95; // spinning b_ccw
 
   f_cw_scalar = f_cw_const * (pitchVals[0] + rollVals[0] + yawVals[0]) / 3.0;
   b_cw_scalar = b_cw_const * (pitchVals[1] + rollVals[1] + yawVals[1]) / 3.0;
@@ -514,10 +515,10 @@ void updateMotorVoltages() {
   b_ccw_scalar /= max_val;
 
   //**SET TO NEW SCALARS ONLY FOR MANUAL TESTING**
-  f_cw_scalar = f_cw_const;
+  /*f_cw_scalar = f_cw_const;
   b_cw_scalar = b_cw_const;
   f_ccw_scalar = f_ccw_const;
-  b_ccw_scalar = b_ccw_const;
+  b_ccw_scalar = b_ccw_const;*/
 
   // calculate final motor voltages with base offset
   double f_cw_volt = 1000.0 + (f_cw_scalar * v_scalar * 1000.0);
