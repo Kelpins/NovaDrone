@@ -473,8 +473,6 @@ double* adjustYaw() {
   double scaled_difference = difference / 90.0;
   scaled_difference = constrain(scaled_difference, -0.2, 0.2);
 
-  // Removed printOutput for yT, Iy, y∆
-
   double f_cw = 0.8 - scaled_difference;
   double b_cw = 0.8 - scaled_difference;
   double f_ccw = 0.8 + scaled_difference;
@@ -528,10 +526,10 @@ void updateMotorVoltages() {
   double b_ccw_volt = 1000.0 + (b_ccw_scalar * v_scalar * 1000.0);
 
   // constrain motor voltages 1000 <= volt <= 2000
-  f_cw_volt = constrain(f_cw_volt, 1075.0, 2000.0);
-  b_cw_volt = constrain(b_cw_volt, 1075.0, 2000.0);
-  f_ccw_volt = constrain(f_ccw_volt, 1075.0, 2000.0);
-  b_ccw_volt = constrain(b_ccw_volt, 1075.0, 2000.0);
+  f_cw_volt = constrain(f_cw_volt, 1000.0, 2000.0);
+  b_cw_volt = constrain(b_cw_volt, 1000.0, 2000.0);
+  f_ccw_volt = constrain(f_ccw_volt, 1000.0, 2000.0);
+  b_ccw_volt = constrain(b_ccw_volt, 1000.0, 2000.0);
 
   setPWM(f_cw_pin, f_cw_volt);
   setPWM(b_cw_pin, b_cw_volt);
