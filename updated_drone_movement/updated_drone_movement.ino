@@ -382,15 +382,15 @@ double* adjustPitch() {
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.005) * (target_pitch - imu_pitch);
+  double difference = (0.0025) * (target_pitch - imu_pitch);
   pitch_diff = difference; // Capture pitch difference
 
   // Removed printOutput for p∆
 
-  double f_cw = 0.9 + difference;
-  double b_cw = 0.9 - difference;
-  double f_ccw = 0.9 + difference;
-  double b_ccw = 0.9 - difference;
+  double f_cw = 0.95 + difference;
+  double b_cw = 0.95 - difference;
+  double f_ccw = 0.95 + difference;
+  double b_ccw = 0.95 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -414,15 +414,15 @@ double* adjustRoll() {
   // essentially a scalar for the change in each scalar
   // -1: max difference forward
   // 1: max difference backward
-  double difference = (0.005) * (target_roll - imu_roll);
+  double difference = (0.0025) * (target_roll - imu_roll);
   roll_diff = difference; // Capture roll difference
 
   // Removed printOutput for r∆
 
-  double f_cw = 0.9 - difference;
-  double b_cw = 0.9 + difference;
-  double f_ccw = 0.9 + difference;
-  double b_ccw = 0.9 - difference;
+  double f_cw = 0.95 - difference;
+  double b_cw = 0.95 + difference;
+  double f_ccw = 0.95 + difference;
+  double b_ccw = 0.95 - difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -472,12 +472,12 @@ double* adjustYaw() {
   }
 
   double scaled_difference = difference / 90.0;
-  scaled_difference = constrain(scaled_difference, -0.1, 0.1);
+  scaled_difference = constrain(scaled_difference, -0.05, 0.05);
 
-  double f_cw = 0.9 - scaled_difference;
-  double b_cw = 0.9 - scaled_difference;
-  double f_ccw = 0.9 + scaled_difference;
-  double b_ccw = 0.9 + scaled_difference;
+  double f_cw = 0.95 - scaled_difference;
+  double b_cw = 0.95 - scaled_difference;
+  double f_ccw = 0.95 + scaled_difference;
+  double b_ccw = 0.95 + scaled_difference;
 
   double* out_arr = new double[4]{f_cw, b_cw, f_ccw, b_ccw};
   return out_arr;
@@ -493,10 +493,10 @@ void updateMotorVoltages() {
   double* yawVals = adjustYaw();
 
   // adjust constants for physical motor power differentials
-  double f_cw_const = 0.96725; // spinning b_cw*
+  double f_cw_const = 0.97; // spinning b_cw*
   double b_cw_const = 0.9825; // spinning f_cw
-  double f_ccw_const = 0.9625; // spinning f_ccw // most powerful
-  double b_ccw_const = 0.95; // spinning b_ccw
+  double f_ccw_const = 0.957; // spinning f_ccw // most powerful
+  double b_ccw_const = 0.97; // spinning b_ccw
 
   f_cw_scalar = f_cw_const * (pitchVals[0] + rollVals[0] + yawVals[0]) / 3.0;
   b_cw_scalar = b_cw_const * (pitchVals[1] + rollVals[1] + yawVals[1]) / 3.0;
