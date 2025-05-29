@@ -354,6 +354,7 @@ void updateStates() {
                         String(roll_diff) + "," +
                         String(current_yaw_target) + "," +
                         String(yaw_diff) + "," +
+                        String(0.0) + "," + // Dummy value for data_field_11
                         String(v_scalar) + "," +
                         String(f_cw_scalar) + "," +
                         String(b_cw_scalar) + "," +
