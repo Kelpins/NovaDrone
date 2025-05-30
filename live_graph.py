@@ -236,7 +236,7 @@ class DroneDataPlotter:
             if not line: # Handle empty lines after strip
                 return None
 
-            values_str = [0]+line.split(',')
+            values_str = line.split(',')
             
             if len(values_str) != 17:  # Updated to expect 17 values
                 print(f"Malformed data line: Expected 17 values, got {len(values_str)}. Line: '{line}'")
