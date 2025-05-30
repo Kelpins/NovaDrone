@@ -4,41 +4,49 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-#include <ESPmDNS.h> // For hostname resolution
+#include <ESPmDNS.h>
 
 // WiFi credentials
 const char* ssid = "SIMOMIFI_G0U0_2.4GHz";
 const char* password = "DwAJi54E";
 // MySecureOTApass
 
-// PID Configuration
-// Pitch Axis PID Gains (NEEDS CAREFUL TUNING!)
-double Kp_pitch = 0.025; // Initial Kp based on user's original proportional scaling
-double Ki_pitch = 0.0;   // Start Ki at 0
-double Kd_pitch = 0.0;   // Start Kd at 0
-// Roll Axis PID Gains (NEEDS CAREFUL TUNING!)
-double Kp_roll = 0.025;  // Initial Kp based on user's original proportional scaling
-double Ki_roll = 0.0;    // Start Ki at 0
-double Kd_roll = 0.0;    // Start Kd at 0
-// Yaw Axis PID Gains (NEEDS CAREFUL TUNING!)
-// User's original yaw 'scaled_difference' was error/90.0. Kp_yaw could be ~1/90 = 0.011
-double Kp_yaw = 0.015;   // Start Kp for yaw
-double Ki_yaw = 0.0;     // Start Ki at 0
-double Kd_yaw = 0.0;     // Start Kd at 0
+// === ANGLE PID GAINS (Outer Loop) ===
+double PAngleRoll = 2.0;    
+double IAngleRoll = 0.0;    
+double DAngleRoll = 0.0;    
+double PAnglePitch = 2.0;
+double IAnglePitch = 0.0;
+double DAnglePitch = 0.0;
+
+// === RATE PID GAINS (Inner Loop) ===
+// Optimal values from PID_TUNING_RESULTS_SUMMARY.md simulation
+double Kp_pitch = 0.025;
+double Ki_pitch = 0.0004;   // Updated from simulation optimal
+double Kd_pitch = 0.0;      // Derivative not needed
+double Kp_roll = 0.025;  
+double Ki_roll = 0.0004;    // Updated from simulation optimal
+double Kd_roll = 0.0;       // Derivative not needed
+double Kp_yaw = 0.015;   
+double Ki_yaw = 0.0;        // P-only control sufficient
+double Kd_yaw = 0.0;        // Derivative not needed
 
 // PID Output Scaling Factors
-// These can be used to adjust the magnitude of the PID output if Kp alone doesn't provide the desired range.
-// For now, assuming Kp values are chosen to give appropriate output magnitudes, so scaling is 1.0.
 const double PID_OUTPUT_SCALING_PITCH = 1.0;
 const double PID_OUTPUT_SCALING_ROLL = 1.0;
 const double PID_OUTPUT_SCALING_YAW = 1.0;
 
-// PID Limits and Safety
-const double MAX_PID_INTEGRAL = 50.0;          // Anti-windup limit for integral term (tune this)
-const double MAX_TARGET_PITCH_ROLL = 20.0;     // Max target pitch/roll angle command for safety
-const double MAX_ABS_PITCH_ROLL_SAFETY = 35.0; // Safety cutoff for actual pitch/roll angle
+// Safety Limits
+const double MAX_PID_INTEGRAL = 50.0;
+const double MAX_TARGET_PITCH_ROLL = 20.0;
+const double MAX_ABS_PITCH_ROLL_SAFETY = 35.0;
 
 // PID State Variables
+double angle_pitch_error_integral = 0.0;
+double angle_pitch_previous_error = 0.0;
+double angle_roll_error_integral = 0.0;
+double angle_roll_previous_error = 0.0;
+
 double pitch_error_integral = 0.0;
 double pitch_previous_error = 0.0;
 double roll_error_integral = 0.0;
@@ -46,23 +54,24 @@ double roll_previous_error = 0.0;
 double yaw_error_integral = 0.0;
 double yaw_previous_error = 0.0;
 
-unsigned long last_pid_time = 0; // For calculating dt
+unsigned long last_pid_time = 0;
 
 // Original global variables
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 
+// Motor pin assignments (updated after testing)
 const int ppm_pin = 8;
-const int f_cw_pin = 9;
-const int b_cw_pin = 10;
-const int f_ccw_pin = 11;
+const int b_cw_pin = 9;   // Swapped: was f_cw
+const int f_cw_pin = 10;  // Swapped: was b_cw
+const int f_ccw_pin = 11; 
 const int b_ccw_pin = 12;
 
-unsigned long timer = 0; // For general serial output
-unsigned long timer_pid_debug = 0; // For PID specific debug output
+unsigned long timer = 0;
+unsigned long timer_pid_debug = 0;
 
-volatile unsigned long lastTime = 0; // For PPM ISR
-volatile int channelIndex = 0;       // For PPM ISR
-volatile int channelValues[6] = {0}; // For PPM ISR
+volatile unsigned long lastTime = 0;
+volatile int channelIndex = 0;
+volatile int channelValues[6] = {0};
 
 int cout_roll = 1500;
 int cout_pitch = 1500;
@@ -71,7 +80,7 @@ int cout_yaw = 1500;
 int cout_vra = 1000;
 int cout_vrb = 1000;
 
-double current_yaw_target = 0.0; // Target yaw heading, updated incrementally
+double current_yaw_target = 0.0;
 
 double imu_roll = 0.0;
 double imu_pitch = 0.0;
@@ -84,9 +93,8 @@ double b_cw_scalar = 0.5;
 double f_ccw_scalar = 0.5;
 double b_ccw_scalar = 0.5;
 
-const double scalar_change = 0.035; // User's original factor for yaw target update rate
+const double scalar_change = 0.035;
 
-// Global variables for differences calculated in adjust functions (for telnet output)
 double pitch_diff = 0.0;
 double roll_diff = 0.0;
 double yaw_diff = 0.0;
@@ -100,7 +108,16 @@ Servo esc[4];
 WiFiServer wifiServer(23);
 WiFiClient telnetClient;
 
-// Helper function to print output to telnet if connected, otherwise to serial
+double DesiredAngleRoll = 0.0;
+double DesiredAnglePitch = 0.0;
+double DesiredRateRoll = 0.0;
+double DesiredRatePitch = 0.0;
+double DesiredRateYaw = 0.0;
+
+double RateRoll = 0.0;
+double RatePitch = 0.0;
+double RateYaw = 0.0;
+
 void printOutput(const char* message) {
   if (telnetClient && telnetClient.connected()) {
     telnetClient.print(message);
@@ -144,7 +161,6 @@ void printlnOutput(double value) {
   }
 }
 
-// Function runs on rising edge of PPM pulse (within interrupt)
 void IRAM_ATTR ppmISR() {
   unsigned long now = micros();
   unsigned long pulse = now - lastTime;
@@ -165,8 +181,8 @@ void setPWM(int pin, int pulse) {
 }
 
 void setupWiFiTelnet() {
-  Serial.begin(9600); // Changed from 115200 to match updated_drone_movement.ino
-  
+  Serial.begin(115200); 
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
@@ -189,7 +205,7 @@ void setupWiFiTelnet() {
 
   printlnOutput("Wi-Fi connected!");
   printOutput("IP address: ");
-  printlnOutput(WiFi.localIP().toString()); // Use toString() for IPAddress
+  printlnOutput(WiFi.localIP().toString());
   
   if (MDNS.begin("esp32-nova-drone")) { 
     printlnOutput("mDNS responder started. Hostname: esp32-nova-drone.local");
@@ -229,48 +245,74 @@ void handleTelnetClient() {
   if (telnetClient && telnetClient.connected()) {
     if (telnetClient.available()) {
       while(telnetClient.available()) {
-        telnetClient.read(); // Discard data for now
+        telnetClient.read();
       }
     }
   }
 }
 
-// Helper function to normalize an angle to the -180 to +180 degree range
 double normalizeAngle180(double angle) {
   angle = fmod(angle, 360.0);
   if (angle > 180.0) {
     angle -= 360.0;
-  } else if (angle <= -180.0) { // Use <= for -180 to become +180 if desired, or < to keep -180 as is. Let's keep -180.
+  } else if (angle <= -180.0) {
     angle += 360.0;
   }
   return angle;
 }
 
-// Generic PID calculation function
 double calculatePID(double current_value, double target_value,
                     double Kp, double Ki, double Kd,
                     double &integral_term, double &previous_error, double dt) {
-  if (dt <= 1e-6) dt = 1e-6; // Prevent division by zero or extreme values if dt is too small
-
   double error = target_value - current_value;
 
-  // Proportional term
   double P_out = Kp * error;
 
-  // Integral term (with anti-windup)
   integral_term += error * dt;
   integral_term = constrain(integral_term, -MAX_PID_INTEGRAL, MAX_PID_INTEGRAL);
   double I_out = Ki * integral_term;
 
-  // Derivative term
   double derivative = (error - previous_error) / dt;
   double D_out = Kd * derivative;
 
-  previous_error = error; // Update previous error for the next iteration
+  previous_error = error;
 
-  return P_out + I_out + D_out; // Total PID output
+  return P_out + I_out + D_out;
 }
 
+double PIDReturn[] = {0, 0, 0};
+
+void pid_equation(double Error, double P, double I, double D, double &PrevError, double &PrevIterm) {
+  double dt = 0.004;
+  
+  double Pterm = P * Error;
+  double Iterm = PrevIterm + I * (Error + PrevError) * dt / 2;
+  
+  if (Iterm > 400) Iterm = 400;
+  else if (Iterm < -400) Iterm = -400;
+  
+  double Dterm = D * (Error - PrevError) / dt;
+  double PIDOutput = Pterm + Iterm + Dterm;
+  
+  if (PIDOutput > 400) PIDOutput = 400;
+  else if (PIDOutput < -400) PIDOutput = -400;
+  
+  PIDReturn[0] = PIDOutput;
+  PIDReturn[1] = Error;
+  PIDReturn[2] = Iterm;
+  
+  PrevError = Error;
+  PrevIterm = Iterm;
+}
+
+void reset_pid(void) {
+  angle_pitch_previous_error = 0; angle_pitch_error_integral = 0;
+  angle_roll_previous_error = 0; angle_roll_error_integral = 0;
+  
+  pitch_previous_error = 0; pitch_error_integral = 0;
+  roll_previous_error = 0; roll_error_integral = 0;
+  yaw_previous_error = 0; yaw_error_integral = 0;
+}
 
 void setup(){
   setupWiFiTelnet(); 
@@ -284,20 +326,19 @@ void setup(){
   }
   printlnOutput("BNO055 Detected!"); 
 
-  delay(1000); // Allow BNO055 to settle
-  bno.setExtCrystalUse(true); // Recommended for stability
+  delay(1000);
+  bno.setExtCrystalUse(true);
   printlnOutput("BNO055 External Crystal Enabled.");
 
-  // Capture initial offsets
   sensors_event_t event;
-  for (int i=0; i<10; i++) { // Take a few readings to stabilize
+  for (int i=0; i<10; i++) {
       bno.getEvent(&event);
       delay(50);
   }
-  x_offset = event.orientation.x; // Yaw offset
-  y_offset = event.orientation.y; // Pitch offset
-  z_offset = event.orientation.z; // Roll offset
-  current_yaw_target = 0; // Initialize target yaw relative to initial orientation (which becomes 0 after offset)
+  x_offset = event.orientation.x;
+  y_offset = event.orientation.y;
+  z_offset = event.orientation.z;
+  current_yaw_target = 0;
   printlnOutput("IMU offsets captured.");
   printOutput("X_offset (Yaw): "); printlnOutput(x_offset);
   printOutput("Y_offset (Pitch): "); printlnOutput(y_offset);
@@ -318,30 +359,35 @@ void setup(){
   }
 
   if (pulseValue < 1000) {
-      printlnOutput("RX still disconnected after checks. Check wiring/power/binding/signal type!");
+      printlnOutput("RX still disconnected after checks.");
   } else {
       printlnOutput("RX Detected! Proceeding...");
   }
   delay(100);
 
   printlnOutput("Arming ESCs...");
-  esc[0].setPeriodHertz(50); esc[0].attach(f_cw_pin, 1000, 2000); esc[0].writeMicroseconds(1000);
-  esc[1].setPeriodHertz(50); esc[1].attach(b_cw_pin, 1000, 2000); esc[1].writeMicroseconds(1000);
+  esc[0].setPeriodHertz(50); esc[0].attach(b_cw_pin, 1000, 2000); esc[0].writeMicroseconds(1000);
+  esc[1].setPeriodHertz(50); esc[1].attach(f_cw_pin, 1000, 2000); esc[1].writeMicroseconds(1000);
   esc[2].setPeriodHertz(50); esc[2].attach(f_ccw_pin, 1000, 2000); esc[2].writeMicroseconds(1000);
   esc[3].setPeriodHertz(50); esc[3].attach(b_ccw_pin, 1000, 2000); esc[3].writeMicroseconds(1000);
-  delay(1000); // Wait for ESCs to arm
+  delay(1000);
 
   pinMode(ppm_pin, INPUT);
   attachInterrupt(digitalPinToInterrupt(ppm_pin), ppmISR, RISING); 
 
-  last_pid_time = micros(); // Initialize time for first PID calculation
-  delay(1000); // Additional delay before starting main loop
+  last_pid_time = micros();
+  delay(1000);
   printlnOutput("Ready for flight!");
 }
 
 void updateStates() {
   sensors_event_t event;
   bno.getEvent(&event); 
+  
+  imu::Vector<3> gyro = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+  RateRoll = gyro.y();
+  RatePitch = gyro.x();
+  RateYaw = gyro.z();
   
   cout_roll = channelValues[0]; 
   cout_pitch = channelValues[1]; 
@@ -350,15 +396,11 @@ void updateStates() {
   cout_vra = channelValues[4]; 
   cout_vrb = channelValues[5]; 
   
-  // Apply offsets and map to drone's coordinate system
-  // User: x is yaw, y is pitch, z is roll
-  imu_yaw = normalizeAngle180(event.orientation.x); // No offset applied, matching updated_drone_movement
-  imu_pitch = event.orientation.y - y_offset; // BNO055 pitch is typically -90 to +90
-  imu_roll = event.orientation.z - z_offset;   // BNO055 roll is typically -180 to +180 (or -90 to +90 if only one axis used)
-                                             // Ensure roll is also handled correctly if it wraps. For now, direct subtraction.
+  imu_yaw = normalizeAngle180(event.orientation.x);
+  imu_pitch = event.orientation.y - y_offset;
+  imu_roll = event.orientation.z - z_offset;
 
-  if (millis() - timer > 100) {  // Changed from 1000ms to 100ms
-    // Construct the CSV string (matching updated_drone_movement format)
+  if (millis() - timer > 100) {
     String dataString = String(imu_yaw) + "," +
                         String(imu_pitch) + "," +
                         String(imu_roll) + "," +
@@ -383,50 +425,47 @@ void updateStates() {
 
 // Calculates pitch motor contributions based on PID
 void adjustPitchPID(double current_pitch_angle, int controller_pitch_input, double dt, double* contributions) {
-    // 1. Calculate Target Pitch (user's existing logic)
-    double target_pitch = (1500.0 - controller_pitch_input) / 25.0;
-    // Constrain target_pitch to safety limits
-    target_pitch = constrain(target_pitch, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL);
-
-    // 2. Calculate PID Output
-    double pid_output = calculatePID(current_pitch_angle, target_pitch,
-                                     Kp_pitch, Ki_pitch, Kd_pitch,
-                                     pitch_error_integral, pitch_previous_error, dt);
-
-    // 3. Scale PID output
-    double scaled_pid_output = pid_output * PID_OUTPUT_SCALING_PITCH;
+    DesiredAnglePitch = 0.10 * (controller_pitch_input - 1500);
+    DesiredAnglePitch = constrain(DesiredAnglePitch, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL);
     
-    // Capture pitch error for telnet output (matching original's logic)
-    pitch_diff = scaled_pid_output; // This represents the correction being applied
+    double ErrorAnglePitch = DesiredAnglePitch - current_pitch_angle;
+    pid_equation(ErrorAnglePitch, PAnglePitch, IAnglePitch, DAnglePitch, angle_pitch_previous_error, angle_pitch_error_integral);
+    DesiredRatePitch = PIDReturn[0];
+    
+    double ErrorRatePitch = DesiredRatePitch - RatePitch;
+    pid_equation(ErrorRatePitch, Kp_pitch, Ki_pitch, Kd_pitch, pitch_previous_error, pitch_error_integral);
+    double InputPitch = PIDReturn[0];
+    
+    double scaled_pid_output = InputPitch / 800.0;
+    pitch_diff = scaled_pid_output;
 
-    // 4. Calculate motor contributions for pitch
-    // Positive scaled_pid_output commands nose down (front motors decrease, rear increase)
-    contributions[0] = 0.5 + scaled_pid_output; // f_cw (front)
-    contributions[1] = 0.5 - scaled_pid_output; // b_cw (rear)
-    contributions[2] = 0.5 + scaled_pid_output; // f_ccw (front)
-    contributions[3] = 0.5 - scaled_pid_output; // b_ccw (rear)
+    contributions[0] = 0.5 + scaled_pid_output;
+    contributions[1] = 0.5 - scaled_pid_output;
+    contributions[2] = 0.5 + scaled_pid_output;
+    contributions[3] = 0.5 - scaled_pid_output;
 }
 
 // Calculates roll motor contributions based on PID
 void adjustRollPID(double current_roll_angle, int controller_roll_input, double dt, double* contributions) {
-    // 1. Calculate Target Roll
-    double target_roll = (1500.0 - controller_roll_input) / 25.0; // Positive input = roll left
-    target_roll = constrain(target_roll, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL);
-
-    // 2. Calculate PID Output
-    double pid_output = calculatePID(current_roll_angle, target_roll,
-                                     Kp_roll, Ki_roll, Kd_roll,
-                                     roll_error_integral, roll_previous_error, dt);
-    // 3. Scale PID output
-    double scaled_pid_output = pid_output * PID_OUTPUT_SCALING_ROLL;
+    // 1. Calculate Desired Angle (outer loop setpoint)
+    DesiredAngleRoll = 0.10 * (controller_roll_input - 1500);  // ±50° at full stick
+    DesiredAngleRoll = constrain(DesiredAngleRoll, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL);
     
-    // Capture roll error for telnet output
-    roll_diff = scaled_pid_output; // This represents the correction being applied
+    // 2. Angle PID (outer loop) - calculates desired rate
+    double ErrorAngleRoll = DesiredAngleRoll - current_roll_angle;
+    pid_equation(ErrorAngleRoll, PAngleRoll, IAngleRoll, DAngleRoll, angle_roll_previous_error, angle_roll_error_integral);
+    DesiredRateRoll = PIDReturn[0];
+    
+    // 3. Rate PID (inner loop) - calculates motor command
+    double ErrorRateRoll = DesiredRateRoll - RateRoll;
+    pid_equation(ErrorRateRoll, Kp_roll, Ki_roll, Kd_roll, roll_previous_error, roll_error_integral);
+    double InputRoll = PIDReturn[0];
+    
+    // Scale to 0-1 range for motor mixing
+    double scaled_pid_output = InputRoll / 800.0; // Scale from ±400 to ±0.5
+    roll_diff = scaled_pid_output; // For telnet output
 
     // 4. Calculate motor contributions for roll
-    // Positive scaled_pid_output commands roll left (left motors decrease, right increase)
-    // User's stick: 1000 (right) -> 2000 (left). (1500 - cout_roll) means positive is left.
-    // So positive scaled_pid_output should make left motors decrease.
     contributions[0] = 0.5 + scaled_pid_output; // f_cw (front left)
     contributions[1] = 0.5 + scaled_pid_output; // b_cw (rear left)
     contributions[2] = 0.5 - scaled_pid_output; // f_ccw (front right)
@@ -435,45 +474,25 @@ void adjustRollPID(double current_roll_angle, int controller_roll_input, double 
 
 // Updates yaw target and calculates yaw motor contributions based on PID
 void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller_yaw_input, double dt, double* contributions) {
-    // 1. Update Target Yaw (user's existing logic, interpreted as per-loop rate adjustment)
-    double adjusted_yaw_stick_input = (1500.0 - controller_yaw_input) / 1000.0; // Range approx -0.5 to 0.5
-    current_yaw_target -= (scalar_change * adjusted_yaw_stick_input); // scalar_change is per-loop rate factor
-    current_yaw_target = normalizeAngle180(current_yaw_target);
-
-    // 2. Calculate Yaw Error (shortest angle)
-    double yaw_error = current_yaw_target - current_yaw_angle;
-    yaw_error = normalizeAngle180(yaw_error); // Ensure error is shortest path
+    // 1. Yaw is rate control only (no angle loop)
+    DesiredRateYaw = 0.15 * (controller_yaw_input - 1500);  // ±225°/s at full stick
     
-    // Capture raw yaw difference for telnet output (before PID processing)
-    yaw_diff = yaw_error;
+    // Update yaw target for telnet output (keep existing logic)
+    double adjusted_yaw_stick_input = (1500.0 - controller_yaw_input) / 1000.0;
+    current_yaw_target -= (scalar_change * adjusted_yaw_stick_input);
+    current_yaw_target = normalizeAngle180(current_yaw_target);
+    
+    // 2. Rate PID for yaw
+    double ErrorRateYaw = DesiredRateYaw - RateYaw;
+    yaw_diff = ErrorRateYaw / 90.0; // For telnet output compatibility
+    
+    pid_equation(ErrorRateYaw, Kp_yaw, Ki_yaw, Kd_yaw, yaw_previous_error, yaw_error_integral);
+    double InputYaw = PIDReturn[0];
+    
+    // Scale to 0-1 range
+    double scaled_pid_output = InputYaw / 800.0;
 
-    // 3. Calculate PID Output (target for PID is current + shortest_error)
-    double effective_target_yaw = current_yaw_angle + yaw_error;
-    double pid_output = calculatePID(current_yaw_angle, effective_target_yaw,
-                                     Kp_yaw, Ki_yaw, Kd_yaw,
-                                     yaw_error_integral, yaw_previous_error, dt);
-    // 4. Scale PID output
-    double scaled_pid_output = pid_output * PID_OUTPUT_SCALING_YAW;
-
-    // 5. Calculate motor contributions for yaw
-    // Positive scaled_pid_output commands yaw right/clockwise
-    // CW motors (e.g., FR, BL) decrease power; CCW motors (e.g., FL, BR) increase power.
-    // Assuming motor layout: FL (f_cw, CCW), FR (f_ccw, CW), BL (b_cw, CW), BR (b_ccw, CCW) - check this
-    // User's pinout: f_cw_pin (9), b_cw_pin (10), f_ccw_pin (11), b_ccw_pin (12)
-    // Let's assume f_cw and b_ccw are CCW (increase for CW yaw)
-    // And b_cw and f_ccw are CW (decrease for CW yaw)
-    contributions[0] = 0.5 - scaled_pid_output; // f_cw (CCW) - User had this as 0.5 - scaled_difference for CW yaw
-    contributions[1] = 0.5 + scaled_pid_output; // b_cw (CW)   - User had this as 0.5 - scaled_difference for CW yaw
-    contributions[2] = 0.5 + scaled_pid_output; // f_ccw (CW)  - User had this as 0.5 + scaled_difference for CW yaw
-    contributions[3] = 0.5 - scaled_pid_output; // b_ccw (CCW) - User had this as 0.5 + scaled_difference for CW yaw
-    // Re-checking user's original adjustYaw:
-    // f_cw = 0.5 - scaled_difference; b_cw = 0.5 - scaled_difference;
-    // f_ccw = 0.5 + scaled_difference; b_ccw = 0.5 + scaled_difference;
-    // This means CW props (f_ccw, b_ccw) speed up for positive scaled_difference (CW yaw)
-    // And CCW props (f_cw, b_cw) slow down for positive scaled_difference (CW yaw)
-    // This is slightly unusual. Typically for CW yaw, CW props slow down, CCW speed up.
-    // Let's stick to user's original logic interpretation for now.
-    // If positive scaled_pid_output means "yaw right/clockwise":
+    // 3. Calculate motor contributions for yaw (keep existing mixing)
     contributions[0] = 0.5 - scaled_pid_output; // f_cw
     contributions[1] = 0.5 - scaled_pid_output; // b_cw
     contributions[2] = 0.5 + scaled_pid_output; // f_ccw
@@ -482,6 +501,13 @@ void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller
 
 
 void updateMotorVoltagesPID(double dt) {
+  // Motor power constants - tested values for straight flight
+  // These compensate for individual motor/prop differences
+  double f_cw_const = 0.96725;  // Front clockwise
+  double b_cw_const = 0.9825;   // Back clockwise  
+  double f_ccw_const = 0.9625;  // Front counter-clockwise
+  double b_ccw_const = 0.95;    // Back counter-clockwise (weakest motor)
+  
   double pitch_contributions[4];
   double roll_contributions[4];
   double yaw_contributions[4];
@@ -490,72 +516,58 @@ void updateMotorVoltagesPID(double dt) {
   adjustRollPID(imu_roll, cout_roll, dt, roll_contributions);
   updateYawTargetAndContributionsPID(imu_yaw, cout_yaw, dt, yaw_contributions);
 
-  // Average the contributions from each axis (user's original method)
   f_cw_scalar = (pitch_contributions[0] + roll_contributions[0] + yaw_contributions[0]) / 3.0;
   b_cw_scalar = (pitch_contributions[1] + roll_contributions[1] + yaw_contributions[1]) / 3.0;
   f_ccw_scalar = (pitch_contributions[2] + roll_contributions[2] + yaw_contributions[2]) / 3.0;
   b_ccw_scalar = (pitch_contributions[3] + roll_contributions[3] + yaw_contributions[3]) / 3.0;
 
-  // Calculate overall throttle scalar
   v_scalar = (cout_throttle - 1000.0) / 1000.0;
-  v_scalar = constrain(v_scalar, 0.0, 1.0); // Ensure v_scalar is not negative or overly large
+  v_scalar = constrain(v_scalar, 0.0, 1.0);
 
-  // Original safety cutoffs
-  if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 950) { // Adjusted throttle cutoff slightly
+  if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 950) {
     v_scalar = 0.0;
+    reset_pid();
   }
 
-  // New safety cutoff based on actual drone attitude
   if (abs(imu_pitch) > MAX_ABS_PITCH_ROLL_SAFETY || abs(imu_roll) > MAX_ABS_PITCH_ROLL_SAFETY) {
     v_scalar = 0.0;
-    if(millis() - timer_pid_debug > 1000) { // Avoid spamming
+    reset_pid();
+    if(millis() - timer_pid_debug > 1000) {
         printlnOutput("!!! SAFETY CUTOFF: Pitch/Roll angle exceeded limits !!!");
     }
   }
   
-  // Normalize motor scalars (user's original method)
   double max_s = 0.0;
   max_s = max(f_cw_scalar, max_s);
   max_s = max(b_cw_scalar, max_s);
   max_s = max(f_ccw_scalar, max_s);
   max_s = max(b_ccw_scalar, max_s);
 
-  if (max_s > 1.0) { // Only normalize if any scalar exceeds 1.0 to preserve ratios below 1.0
+  if (max_s > 1.0) {
     f_cw_scalar /= max_s;
     b_cw_scalar /= max_s;
     f_ccw_scalar /= max_s;
     b_ccw_scalar /= max_s;
   }
-  // Also ensure no scalar is negative after averaging if PID outputs are large
+  
   f_cw_scalar = max(0.0, f_cw_scalar);
   b_cw_scalar = max(0.0, b_cw_scalar);
   f_ccw_scalar = max(0.0, f_ccw_scalar);
   b_ccw_scalar = max(0.0, b_ccw_scalar);
 
-
-  // Debug output commented out to prevent interference with CSV data stream
-  /*
-  if (millis() - timer_pid_debug > 1000) {
-    printOutput("PID Targets P: "); printOutput(constrain((1500.0 - cout_pitch) / 25.0, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL));
-    printOutput(" R: "); printOutput(constrain((1500.0 - cout_roll) / 25.0, -MAX_TARGET_PITCH_ROLL, MAX_TARGET_PITCH_ROLL));
-    printOutput(" Y: "); printlnOutput(current_yaw_target);
-    
-    printOutput("Motor Scalars Pre-V: fcw:"); printOutput(f_cw_scalar);
-    printOutput(" bcw:"); printOutput(b_cw_scalar);
-    printOutput(" fccw:"); printOutput(f_ccw_scalar);
-    printOutput(" bccw:"); printlnOutput(b_ccw_scalar);
-    printOutput("V_Scalar: "); printlnOutput(v_scalar);
-    timer_pid_debug = millis();
-  }
-  */
-
-  // Calculate final motor voltages with base offset
+  // Calculate base voltages
   double f_cw_volt = 1000.0 + (f_cw_scalar * v_scalar * 1000.0);
   double b_cw_volt = 1000.0 + (b_cw_scalar * v_scalar * 1000.0);
   double f_ccw_volt = 1000.0 + (f_ccw_scalar * v_scalar * 1000.0);
   double b_ccw_volt = 1000.0 + (b_ccw_scalar * v_scalar * 1000.0);
 
-  // Constrain motor voltages 1000 <= volt <= 2000
+  // Apply motor constants to final voltages (after PID and mixing)
+  f_cw_volt = 1000.0 + ((f_cw_volt - 1000.0) * f_cw_const);
+  b_cw_volt = 1000.0 + ((b_cw_volt - 1000.0) * b_cw_const);
+  f_ccw_volt = 1000.0 + ((f_ccw_volt - 1000.0) * f_ccw_const);
+  b_ccw_volt = 1000.0 + ((b_ccw_volt - 1000.0) * b_ccw_const);
+
+  // Final constraining
   f_cw_volt = constrain(f_cw_volt, 1000.0, 2000.0);
   b_cw_volt = constrain(b_cw_volt, 1000.0, 2000.0);
   f_ccw_volt = constrain(f_ccw_volt, 1000.0, 2000.0);
@@ -570,17 +582,13 @@ void updateMotorVoltagesPID(double dt) {
 void loop(){
   handleTelnetClient(); 
 
-  unsigned long current_time = micros();
-  double dt = (current_time - last_pid_time) / 1000000.0; // dt in seconds
-  last_pid_time = current_time;
-  if (dt <= 0) dt = 1e-5; // guard against zero or negative dt if micros wraps or timer resolution issue
-
   updateStates();
+  
+  unsigned long current_time = micros();
+  double dt = (current_time - last_pid_time) / 1000000.0;
+  
   updateMotorVoltagesPID(dt);
   
-  // Small delay to prevent overly fast loop if not much processing happens
-  // This also sets a maximum loop frequency. Adjust as needed.
-  // Example: for a ~400Hz loop: delayMicroseconds(2500 - (micros() - current_time));
-  // For now, let it run as fast as possible, dt will handle PID scaling.
-  // Consider if a fixed loop rate is desired for PID consistency.
+  while (micros() - last_pid_time < 4000);
+  last_pid_time = micros();
 } 
