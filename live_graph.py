@@ -69,7 +69,6 @@ class DroneDataPlotter:
         self.last_roll_diff = 0.0
         self.last_current_yaw_target = 0.0
         self.last_yaw_diff = 0.0 # (from vals[10])
-        self.last_data_field_11 = 0.0 # (from vals[11]) - new
         self.last_v_scalar = 0.0 # (from vals[12])
         self.last_f_cw_scalar = 0.0 # (from vals[13])
         self.last_b_cw_scalar = 0.0 # (from vals[14])
@@ -238,8 +237,8 @@ class DroneDataPlotter:
 
             values_str = line.split(',')
             
-            if len(values_str) != 17:  # Updated to expect 17 values
-                print(f"Malformed data line: Expected 17 values, got {len(values_str)}. Line: '{line}'")
+            if len(values_str) != 16:  # Updated to expect 16 values
+                print(f"Malformed data line: Expected 16 values, got {len(values_str)}. Line: '{line}'")
                 return None
 
             # Log the raw data with a high-resolution timestamp
@@ -256,7 +255,7 @@ class DroneDataPlotter:
 
             current_time = datetime.now()
             
-            # Parse all 17 data fields from vals[0] to vals[16]
+            # Parse all 16 data fields from vals[0] to vals[16]
             # and assign to self.last_... attributes
             self.last_imu_roll = vals[0]
             self.last_imu_pitch = vals[1]
@@ -272,13 +271,12 @@ class DroneDataPlotter:
             self.last_current_yaw_target = vals[9]
             self.last_yaw_diff = vals[10] # Used by Yaw Diff Plot
             
-            self.last_data_field_11 = vals[11] # New field corresponding to header "data_field_11"
-            self.last_v_scalar = vals[12]    # v_scalar is now vals[12]
+            self.last_v_scalar = vals[11]    # v_scalar is now vals[11]
             
-            self.last_f_cw_scalar = vals[13] # Used by UI
-            self.last_b_cw_scalar = vals[14] # Used by UI
-            self.last_f_ccw_scalar = vals[15]# Used by UI
-            self.last_b_ccw_scalar = vals[16]# Used by UI
+            self.last_f_cw_scalar = vals[12] # Used by UI
+            self.last_b_cw_scalar = vals[13] # Used by UI
+            self.last_f_ccw_scalar = vals[14]# Used by UI
+            self.last_b_ccw_scalar = vals[15]# Used by UI
 
             # Scale controller outputs for plotting visualization (using self.last_... attributes)
             scaled_cout_roll = (self.last_ctrl_roll - 1500) / 500
@@ -302,7 +300,6 @@ class DroneDataPlotter:
             self.roll_diff_data.append(self.last_roll_diff)
             self.current_yaw_target_data.append(self.last_current_yaw_target)
             self.yaw_diff_data.append(self.last_yaw_diff)
-            self.data_field_11_data.append(self.last_data_field_11) # New deque append
             self.v_scalar_data.append(self.last_v_scalar) # Appending self.last_v_scalar (from vals[12])
             self.f_cw_scalar_data.append(self.last_f_cw_scalar)
             self.b_cw_scalar_data.append(self.last_b_cw_scalar)
