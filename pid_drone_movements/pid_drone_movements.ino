@@ -24,8 +24,8 @@ double DAnglePitch = 0.0;
 double Kp_pitch = 0.025;
 double Ki_pitch = 0.0004;   // Updated from simulation optimal
 double Kd_pitch = 0.0;      // Derivative not needed
-double Kp_roll = 0.025;  
-double Ki_roll = 0.0004;    // Updated from simulation optimal
+double Kp_roll = -0.025;  
+double Ki_roll = -0.0004;    // Updated from simulation optimal
 double Kd_roll = 0.0;       // Derivative not needed
 double Kp_yaw = 0.015;   
 double Ki_yaw = 0.0;        // P-only control sufficient
@@ -505,7 +505,7 @@ void updateMotorVoltagesPID(double dt) {
   // These compensate for individual motor/prop differences
   double f_cw_const = 0.96725;  // Front clockwise
   double b_cw_const = 0.9825;   // Back clockwise  
-  double f_ccw_const = 0.9625;  // Front counter-clockwise
+  double f_ccw_const = 0.9575;  // Front counter-clockwise
   double b_ccw_const = 0.95;    // Back counter-clockwise (weakest motor)
   
   double pitch_contributions[4];
