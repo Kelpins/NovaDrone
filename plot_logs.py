@@ -61,7 +61,7 @@ class LogDataPlotter:
                         
                     try:
                         # Extract timestamp (first value)
-                        timestamp = int(row[0])
+                        timestamp = float(row[0])
                         
                         # Extract IMU data (first 3 values after timestamp)
                         imu_yaw = float(row[1])
