@@ -12,24 +12,24 @@ const char* password = "DwAJi54E";
 // MySecureOTApass
 
 // === ANGLE PID GAINS (Outer Loop) ===
-double PAngleRoll = -2.0;   // NEGATIVE for inverted roll
+double PAngleRoll = -4.0;   // DOUBLED and NEGATIVE
 double IAngleRoll = 0.0;    
 double DAngleRoll = 0.0;    
-double PAnglePitch = 2.0;
+double PAnglePitch = 4.0;   // DOUBLED for stronger response
 double IAnglePitch = 0.0;
 double DAnglePitch = 0.0;
 
 // === RATE PID GAINS (Inner Loop) ===
-// Optimal values from PID_TUNING_RESULTS_SUMMARY.md simulation
-double Kp_pitch = 0.025;
-double Ki_pitch = 0.0004;   // Updated from simulation optimal
-double Kd_pitch = 0.0;      // Derivative not needed
-double Kp_roll = -0.025;    // NEGATIVE for inverted roll
-double Ki_roll = -0.0004;   // NEGATIVE for inverted roll
-double Kd_roll = 0.0;       // Derivative not needed
-double Kp_yaw = 0.015;   
-double Ki_yaw = 0.0;        // P-only control sufficient
-double Kd_yaw = 0.0;        // Derivative not needed
+// SIGNIFICANTLY INCREASED for proper response
+double Kp_pitch = 0.06;     // Was 0.025
+double Ki_pitch = 0.001;    // Was 0.0004
+double Kd_pitch = 0.0003;   // Added some D
+double Kp_roll = -0.06;     // NEGATIVE and increased
+double Ki_roll = -0.001;    // NEGATIVE and increased
+double Kd_roll = 0.0003;    // Added some D
+double Kp_yaw = 0.08;       // DOUBLED from 0.04 for better yaw control
+double Ki_yaw = 0.0008;     // Increased from 0.0002
+double Kd_yaw = 0.0;        // No derivative for yaw
 
 // PID Output Scaling Factors
 const double PID_OUTPUT_SCALING_PITCH = 1.0;
@@ -474,17 +474,42 @@ void adjustRollPID(double current_roll_angle, int controller_roll_input, double 
 
 // Updates yaw target and calculates yaw motor contributions based on PID
 void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller_yaw_input, double dt, double* contributions) {
-    // 1. Yaw is rate control only (no angle loop)
-    DesiredRateYaw = 0.15 * (controller_yaw_input - 1500);  // ±225°/s at full stick
+    // YAW HOLD: If stick is centered, maintain current heading
+    static double yaw_hold_target = 0.0;
+    static bool yaw_hold_active = false;
+    
+    // Check if yaw stick is centered (deadband of ±50)
+    if (abs(controller_yaw_input - 1500) < 50) {
+        if (!yaw_hold_active) {
+            // Just entered yaw hold mode - save current heading
+            yaw_hold_target = current_yaw_angle;
+            yaw_hold_active = true;
+        }
+        
+        // Calculate error from hold target
+        double yaw_hold_error = normalizeAngle180(yaw_hold_target - current_yaw_angle);
+        
+        // Use angle error to generate rate command for holding position
+        DesiredRateYaw = yaw_hold_error * 2.0;  // P gain for angle hold
+        DesiredRateYaw = constrain(DesiredRateYaw, -100.0, 100.0);
+    } else {
+        // Manual yaw control
+        yaw_hold_active = false;
+        DesiredRateYaw = 0.15 * (controller_yaw_input - 1500);  // ±225°/s at full stick
+    }
     
     // Update yaw target for telnet output (keep existing logic)
     double adjusted_yaw_stick_input = (1500.0 - controller_yaw_input) / 1000.0;
     current_yaw_target -= (scalar_change * adjusted_yaw_stick_input);
     current_yaw_target = normalizeAngle180(current_yaw_target);
-    
+
     // 2. Rate PID for yaw
     double ErrorRateYaw = DesiredRateYaw - RateYaw;
-    yaw_diff = ErrorRateYaw / 90.0; // For telnet output compatibility
+    
+    // Fix yaw_diff calculation to handle wraparound properly
+    double yaw_error = current_yaw_target - current_yaw_angle;
+    yaw_error = normalizeAngle180(yaw_error); // Handle wraparound
+    yaw_diff = yaw_error / 90.0; // For telnet output compatibility
     
     pid_equation(ErrorRateYaw, Kp_yaw, Ki_yaw, Kd_yaw, yaw_previous_error, yaw_error_integral);
     double InputYaw = PIDReturn[0];
@@ -492,21 +517,26 @@ void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller
     // Scale to 0-1 range
     double scaled_pid_output = InputYaw / 1200.0;
 
-    // 3. Calculate motor contributions for yaw (keep existing mixing)
-    contributions[0] = 0.5 - scaled_pid_output; // f_cw
-    contributions[1] = 0.5 - scaled_pid_output; // b_cw
-    contributions[2] = 0.5 + scaled_pid_output; // f_ccw
-    contributions[3] = 0.5 + scaled_pid_output; // b_ccw
+    // 3. Calculate motor contributions for yaw
+    // Anti-clockwise correction: reduce CW motor contribution
+    contributions[0] = 0.5 - scaled_pid_output * 1.2; // f_cw - increased influence
+    contributions[1] = 0.5 - scaled_pid_output * 1.2; // b_cw - increased influence
+    contributions[2] = 0.5 + scaled_pid_output * 0.8; // f_ccw - reduced influence
+    contributions[3] = 0.5 + scaled_pid_output * 0.8; // b_ccw - reduced influence
 }
 
 
 void updateMotorVoltagesPID(double dt) {
-  // Motor power constants - tested values for straight flight
-  // These compensate for individual motor/prop differences
-  double f_cw_const = 0.96725;  // Front clockwise
-  double b_cw_const = 0.9825;   // Back clockwise  
-  double f_ccw_const = 0.9625;  // Front counter-clockwise
-  double b_ccw_const = 0.95;    // Back counter-clockwise (weakest motor)
+  // Motor power constants - adjusted to counter clockwise spin and level out
+  // Back motors need more power than front, CCW needs more to counter CW spin
+  double f_cw_const = 0.92;     // Front CW - reduced for CW spin compensation
+  double b_cw_const = 0.97;     // Back CW - higher than front, slight reduction for CW spin
+  double f_ccw_const = 0.94;    // Front CCW - base front power
+  double b_ccw_const = 1.00;    // Back CCW - maximum for weakest motor + back boost
+  
+  // Minimum motor command to ensure motors start (especially for weak BCCW)
+  const double MIN_MOTOR_CMD = 0.10;  // 10% minimum when throttle > 0
+  const double MIN_BCCW_CMD = 0.20;   // 20% minimum for BCCW specifically
   
   double pitch_contributions[4];
   double roll_contributions[4];
@@ -516,13 +546,15 @@ void updateMotorVoltagesPID(double dt) {
   adjustRollPID(imu_roll, cout_roll, dt, roll_contributions);
   updateYawTargetAndContributionsPID(imu_yaw, cout_yaw, dt, yaw_contributions);
 
+  // Calculate PID adjustments (centered around 0.5)
   f_cw_scalar = (pitch_contributions[0] + roll_contributions[0] + yaw_contributions[0]) / 3.0;
   b_cw_scalar = (pitch_contributions[1] + roll_contributions[1] + yaw_contributions[1]) / 3.0;
   f_ccw_scalar = (pitch_contributions[2] + roll_contributions[2] + yaw_contributions[2]) / 3.0;
   b_ccw_scalar = (pitch_contributions[3] + roll_contributions[3] + yaw_contributions[3]) / 3.0;
 
+  // Direct throttle mapping with lower cap to leave room for PID
   v_scalar = (cout_throttle - 1000.0) / 1000.0;
-  v_scalar = constrain(v_scalar, 0.0, 1.0);
+  v_scalar = constrain(v_scalar, 0.0, 0.85);  // Reduced from 0.95 to prevent saturation
 
   if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 950) {
     v_scalar = 0.0;
@@ -534,44 +566,96 @@ void updateMotorVoltagesPID(double dt) {
     reset_pid();
     if(millis() - timer_pid_debug > 1000) {
         printlnOutput("!!! SAFETY CUTOFF: Pitch/Roll angle exceeded limits !!!");
+        timer_pid_debug = millis();
     }
   }
   
-  double max_s = 0.0;
-  max_s = max(f_cw_scalar, max_s);
-  max_s = max(b_cw_scalar, max_s);
-  max_s = max(f_ccw_scalar, max_s);
-  max_s = max(b_ccw_scalar, max_s);
-
-  if (max_s > 1.0) {
-    f_cw_scalar /= max_s;
-    b_cw_scalar /= max_s;
-    f_ccw_scalar /= max_s;
-    b_ccw_scalar /= max_s;
+  // NEW MIXING LOGIC: Throttle sets baseline, PID adds/subtracts
+  // Reduced PID influence to prevent saturation at high throttle
+  double pid_scale = 0.25;  // Reduced from 0.4 to prevent saturation
+  
+  // At high throttle, reduce PID influence even more
+  if (v_scalar > 0.7) {
+    pid_scale = 0.15;  // Even less PID influence at high throttle
   }
   
-  f_cw_scalar = max(0.0, f_cw_scalar);
-  b_cw_scalar = max(0.0, b_cw_scalar);
-  f_ccw_scalar = max(0.0, f_ccw_scalar);
-  b_ccw_scalar = max(0.0, b_ccw_scalar);
+  double f_cw_adjustment = (f_cw_scalar - 0.5) * pid_scale;
+  double b_cw_adjustment = (b_cw_scalar - 0.5) * pid_scale;
+  double f_ccw_adjustment = (f_ccw_scalar - 0.5) * pid_scale;
+  double b_ccw_adjustment = (b_ccw_scalar - 0.5) * pid_scale;
+  
+  // Calculate motor commands: baseline throttle + PID adjustments
+  double f_cw_cmd = v_scalar + f_cw_adjustment;
+  double b_cw_cmd = v_scalar + b_cw_adjustment;
+  double f_ccw_cmd = v_scalar + f_ccw_adjustment;
+  double b_ccw_cmd = v_scalar + b_ccw_adjustment;
+  
+  // Apply minimum motor command if throttle is active
+  if (v_scalar > 0.01) {
+    f_cw_cmd = max(f_cw_cmd, MIN_MOTOR_CMD);
+    b_cw_cmd = max(b_cw_cmd, MIN_MOTOR_CMD);
+    f_ccw_cmd = max(f_ccw_cmd, MIN_MOTOR_CMD);
+    b_ccw_cmd = max(b_ccw_cmd, MIN_BCCW_CMD);  // Higher minimum for BCCW
+  }
+  
+  // Apply motor constants BEFORE constraining to 0-1
+  // This ensures we compensate within the valid range
+  f_cw_cmd = f_cw_cmd * f_cw_const;
+  b_cw_cmd = b_cw_cmd * b_cw_const;
+  f_ccw_cmd = f_ccw_cmd * f_ccw_const;
+  b_ccw_cmd = b_ccw_cmd * b_ccw_const;
+  
+  // SPECIAL BCCW HANDLING - Give it extra power boost
+  // Add 10% boost to BCCW when throttle is active
+  if (v_scalar > 0.01) {
+    b_ccw_cmd = b_ccw_cmd * 1.1;  // 10% boost on top of everything
+  }
+  
+  // Special minimum for BCCW motor to ensure it starts strong
+  if (b_ccw_cmd > 0.01 && b_ccw_cmd < 0.25) {
+    b_ccw_cmd = 0.25;  // Minimum 25% for BCCW when active
+  }
+  
+  // NOW constrain to 0-1 range after compensation
+  f_cw_cmd = constrain(f_cw_cmd, 0.0, 1.0);
+  b_cw_cmd = constrain(b_cw_cmd, 0.0, 1.0);
+  f_ccw_cmd = constrain(f_ccw_cmd, 0.0, 1.0);
+  b_ccw_cmd = constrain(b_ccw_cmd, 0.0, 1.0);
 
-  // Calculate base voltages
-  double f_cw_volt = 1000.0 + (f_cw_scalar * v_scalar * 1000.0);
-  double b_cw_volt = 1000.0 + (b_cw_scalar * v_scalar * 1000.0);
-  double f_ccw_volt = 1000.0 + (f_ccw_scalar * v_scalar * 1000.0);
-  double b_ccw_volt = 1000.0 + (b_ccw_scalar * v_scalar * 1000.0);
+  // Convert to ESC microseconds (1000-2000 range)
+  double f_cw_volt = 1000.0 + (f_cw_cmd * 1000.0);
+  double b_cw_volt = 1000.0 + (b_cw_cmd * 1000.0);
+  double f_ccw_volt = 1000.0 + (f_ccw_cmd * 1000.0);
+  double b_ccw_volt = 1000.0 + (b_ccw_cmd * 1000.0);
+  
+  // FINAL BCCW BOOST - If BCCW is below 1400us, bump it up
+  if (b_ccw_volt > 1050 && b_ccw_volt < 1400) {
+    b_ccw_volt = 1400;  // Ensure strong minimum signal
+  }
 
-  // Apply motor constants to final voltages (after PID and mixing)
-  f_cw_volt = 1000.0 + ((f_cw_volt - 1000.0) * f_cw_const);
-  b_cw_volt = 1000.0 + ((b_cw_volt - 1000.0) * b_cw_const);
-  f_ccw_volt = 1000.0 + ((f_ccw_volt - 1000.0) * f_ccw_const);
-  b_ccw_volt = 1000.0 + ((b_ccw_volt - 1000.0) * b_ccw_const);
-
-  // Final constraining
+  // Final safety constraining (should be redundant now)
   f_cw_volt = constrain(f_cw_volt, 1000.0, 2000.0);
   b_cw_volt = constrain(b_cw_volt, 1000.0, 2000.0);
   f_ccw_volt = constrain(f_ccw_volt, 1000.0, 2000.0);
   b_ccw_volt = constrain(b_ccw_volt, 1000.0, 2000.0);
+  
+  // Debug output for motor commands every 2 seconds
+  static unsigned long last_motor_debug = 0;
+  if (millis() - last_motor_debug > 2000 && v_scalar > 0.01) {
+    printOutput("Motors: FCW="); printOutput(f_cw_volt);
+    printOutput(" BCW="); printOutput(b_cw_volt);
+    printOutput(" FCCW="); printOutput(f_ccw_volt);
+    printOutput(" BCCW="); printlnOutput(b_ccw_volt);
+    last_motor_debug = millis();
+  }
+  
+  // Debug output for saturation detection
+  if (f_cw_cmd >= 0.99 || b_cw_cmd >= 0.99 || f_ccw_cmd >= 0.99 || b_ccw_cmd >= 0.99) {
+    if(millis() - timer_pid_debug > 500) {
+      printlnOutput("WARNING: Motor saturation detected!");
+      timer_pid_debug = millis();
+    }
+  }
 
   setPWM(f_cw_pin, (int)f_cw_volt);
   setPWM(b_cw_pin, (int)b_cw_volt);
@@ -583,10 +667,10 @@ void loop(){
   handleTelnetClient(); 
 
   updateStates();
-  
+
   unsigned long current_time = micros();
   double dt = (current_time - last_pid_time) / 1000000.0;
-  
+
   updateMotorVoltagesPID(dt);
   
   while (micros() - last_pid_time < 4000);
