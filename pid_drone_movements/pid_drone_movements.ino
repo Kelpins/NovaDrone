@@ -598,10 +598,10 @@ void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller
 void updateMotorVoltagesPID(double dt) {
   // Motor power constants - tested values for straight flight
   // These compensate for individual motor/prop differences
-  double f_cw_const = 0.96725;  // Front clockwise
-  double b_cw_const = 0.9825;   // Back clockwise  
-  double f_ccw_const = 0.9575;  // Front counter-clockwise
-  double b_ccw_const = 0.95;    // Back counter-clockwise (weakest motor)
+  double f_cw_const = 0.98;  // Front clockwise
+  double b_cw_const = 0.992;   // Back clockwise  
+  double f_ccw_const = 0.97;  // Front counter-clockwise
+  double b_ccw_const = 0.945;    // Back counter-clockwise (weakest motor)
   
   double pitch_contributions[4];
   double roll_contributions[4];

@@ -344,6 +344,11 @@ class DroneDataPlotter:
     
     def update_plot(self, frame):
         """Update the plot with new data."""
+        # Check if figure is still valid
+        if not plt.fignum_exists(self.fig.number):
+            self.ani.event_source.stop()
+            return []
+            
         try:
             new_data = self.read_data() # Fetch new data
             perform_plot_update = False
@@ -465,33 +470,49 @@ class DroneDataPlotter:
     
     def init_plot(self):
         """Initialize the plot with empty data and prepare UI elements."""
-        # IMU data lines
-        self.ln_yaw.set_data([], [])
-        self.ln_pitch.set_data([], [])
-        self.ln_roll.set_data([], [])
-        
-        # Controller data lines
-        self.ln_yaw_ctrl.set_data([], [])
-        self.ln_pitch_ctrl.set_data([], [])
-        self.ln_roll_ctrl.set_data([], [])
-        
-        # Yaw Difference line
-        if self.ln_yaw_diff: # Check if it's initialized
-            self.ln_yaw_diff.set_data([], [])
+        # Check if figure is still valid
+        if not hasattr(self, 'fig') or not plt.fignum_exists(self.fig.number):
+            return []
+            
+        try:
+            # IMU data lines
+            self.ln_yaw.set_data([], [])
+            self.ln_pitch.set_data([], [])
+            self.ln_roll.set_data([], [])
+            
+            # Controller data lines
+            self.ln_yaw_ctrl.set_data([], [])
+            self.ln_pitch_ctrl.set_data([], [])
+            self.ln_roll_ctrl.set_data([], [])
+            
+            # Yaw Difference line
+            if self.ln_yaw_diff: # Check if it's initialized
+                self.ln_yaw_diff.set_data([], [])
 
-        self.fig.suptitle(f'Drone Telemetry - Waiting for Test #1 - {datetime.now().strftime("%H:%M:%S")}')
-        
-        # Initial state for UI elements is set in setup_plot.
-        # For blitting, all animated artists must be returned by init_func.
-        artists = [self.ln_yaw, self.ln_pitch, self.ln_roll,
-                   self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
-                   self.throttle_display_shape, self.throttle_display_text,
-                   self.ln_yaw_diff] # Added Yaw Diff line
-        artists.extend(self.motor_display_shapes.values())
-        artists.extend(self.motor_display_texts.values())
-        if self.fig._suptitle is not None:
-            artists.append(self.fig._suptitle)
-        return artists
+            self.fig.suptitle(f'Drone Telemetry - Waiting for Test #1 - {datetime.now().strftime("%H:%M:%S")}')
+            
+            # Initial state for UI elements is set in setup_plot.
+            # For blitting, all animated artists must be returned by init_func.
+            artists = [self.ln_yaw, self.ln_pitch, self.ln_roll,
+                     self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
+                     self.throttle_display_shape, self.throttle_display_text]
+            
+            if self.ln_yaw_diff:
+                artists.append(self.ln_yaw_diff)
+                
+            artists.extend(self.motor_display_shapes.values())
+            artists.extend(self.motor_display_texts.values())
+            
+            if hasattr(self.fig, '_suptitle') and self.fig._suptitle is not None:
+                artists.append(self.fig._suptitle)
+                
+            # Filter out any None values that might have snuck in
+            artists = [a for a in artists if a is not None]
+            return artists
+            
+        except Exception as e:
+            print(f"Error in init_plot: {e}")
+            return []
     
     def run(self):
         """Start the data collection and plotting."""
@@ -503,7 +524,11 @@ class DroneDataPlotter:
             print(f"Starting data collection at {self.update_interval}ms interval. Close the plot window to exit...")
             print("Press Ctrl+C to stop")
             
-            # Set up the animation
+            # Create a new figure and setup plot
+            self.fig = plt.figure(figsize=(16, 9))
+            self.setup_plot()
+            
+            # Set up the animation with a reference to keep it alive
             self.ani = FuncAnimation(
                 self.fig, 
                 self.update_plot,
@@ -513,9 +538,9 @@ class DroneDataPlotter:
                 cache_frame_data=False
             )
             
-            # Use a more responsive backend if available
-            plt.ion()  # Turn on interactive mode
-            plt.show(block=True)  # Block until window is closed
+            # Show the plot and block until the window is closed
+            plt.tight_layout()
+            plt.show(block=True)
             
         except KeyboardInterrupt:
             print("\nShutdown requested...")
