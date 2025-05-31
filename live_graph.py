@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from collections import deque
 
 class DroneDataPlotter:
-    def __init__(self, host, port, window_size=30, update_interval=200):  # Default to 5Hz (200ms)
+    def __init__(self, host="192.168.76.215", port=23, window_size=30, update_interval=200):  # Default to 5Hz (200ms)
         """
         Initialize the DroneDataPlotter.
         
@@ -121,12 +121,11 @@ class DroneDataPlotter:
             {'name': 'Roll Diff', 'csv_col_name': 'roll_diff', 'data_category': 'derived_data', 'data_key': 'roll_diff', 'latest_val_key': 'roll_diff', 'csv_index': 8},
             {'name': 'Current Yaw Target', 'csv_col_name': 'current_yaw_target', 'data_category': 'derived_data', 'data_key': 'current_yaw_target', 'latest_val_key': 'current_yaw_target', 'csv_index': 9},
             {'name': 'Yaw Diff', 'csv_col_name': 'yaw_diff', 'data_category': 'derived_data', 'data_key': 'yaw_diff', 'latest_val_key': 'yaw_diff', 'csv_index': 10},
-            {'name': 'Data Field 11', 'csv_col_name': 'data_field_11', 'data_category': 'derived_data', 'data_key': 'data_field_11', 'latest_val_key': 'data_field_11', 'csv_index': 11},
-            {'name': 'V Scalar', 'csv_col_name': 'v_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'v', 'latest_val_key': 'v_scalar', 'csv_index': 12},
-            {'name': 'F CW Scalar', 'csv_col_name': 'f_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_cw', 'latest_val_key': 'f_cw_scalar', 'csv_index': 13},
-            {'name': 'B CW Scalar', 'csv_col_name': 'b_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_cw', 'latest_val_key': 'b_cw_scalar', 'csv_index': 14},
-            {'name': 'F CCW Scalar', 'csv_col_name': 'f_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_ccw', 'latest_val_key': 'f_ccw_scalar', 'csv_index': 15},
-            {'name': 'B CCW Scalar', 'csv_col_name': 'b_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_ccw', 'latest_val_key': 'b_ccw_scalar', 'csv_index': 16},
+            {'name': 'V Scalar', 'csv_col_name': 'v_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'v', 'latest_val_key': 'v_scalar', 'csv_index': 11},
+            {'name': 'F CW Scalar', 'csv_col_name': 'f_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_cw', 'latest_val_key': 'f_cw_scalar', 'csv_index': 12},
+            {'name': 'B CW Scalar', 'csv_col_name': 'b_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_cw', 'latest_val_key': 'b_cw_scalar', 'csv_index': 13},
+            {'name': 'F CCW Scalar', 'csv_col_name': 'f_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_ccw', 'latest_val_key': 'f_ccw_scalar', 'csv_index': 14},
+            {'name': 'B CCW Scalar', 'csv_col_name': 'b_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_ccw', 'latest_val_key': 'b_ccw_scalar', 'csv_index': 15},
         ]
         # Generate the simple list of CSV column names for writing the CSV header row
         self.header = [info['csv_col_name'] for info in self.header_info]
@@ -287,8 +286,11 @@ class DroneDataPlotter:
         print(f"Starting Test {self.current_test_number}. Logging data to {self.current_log_filename}")
     
     def read_data(self):
-        """Read and parse data from the socket stream (CSV format)."""
+        """Read and parse data from the socket stream."""
         try:
+            if not hasattr(self, 'stream') or not self.stream:
+                return None
+                
             line = self.stream.readline()
             if not line:
                 return None
@@ -374,8 +376,9 @@ class DroneDataPlotter:
     def update_plot(self, frame):
         """Update the plot with new data."""
         # Check if figure is still valid
-        if not plt.fignum_exists(self.fig.number):
-            self.ani.event_source.stop()
+        if not hasattr(self, 'fig') or not plt.fignum_exists(self.fig.number):
+            if hasattr(self, 'ani') and hasattr(self.ani, 'event_source'):
+                self.ani.event_source.stop()
             return []
             
         try:
@@ -557,26 +560,36 @@ class DroneDataPlotter:
             self.setup_plot()
             
             # Set up the animation with a reference to keep it alive
-            self.ani = FuncAnimation(
-                self.fig, 
-                self.update_plot,
-                init_func=self.init_plot,
-                interval=self.update_interval,
-                blit=True,  # Enable blitting for better performance
-                cache_frame_data=False
-            )
-            
-            # Show the plot and block until the window is closed
-            plt.tight_layout()
-            plt.show(block=True)
-            
+            try:
+                self.ani = FuncAnimation(
+                    self.fig, 
+                    self.update_plot,
+                    init_func=self.init_plot,
+                    interval=self.update_interval,
+                    blit=True,  # Enable blitting for better performance
+                    cache_frame_data=False
+                )
+                
+                # Show the plot and block until the window is closed
+                plt.tight_layout()
+                plt.show(block=True)
+                
+            except Exception as e:
+                print(f"Error in animation: {e}")
+                raise
+                
         except KeyboardInterrupt:
             print("\nShutdown requested...")
         except Exception as e:
             print(f"An error occurred: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.cleanup()
-            plt.close('all')  # Ensure all plots are closed
+            try:
+                plt.close('all')  # Ensure all plots are closed
+            except:
+                pass
     
     def cleanup(self):
         """Clean up resources."""
@@ -589,7 +602,7 @@ class DroneDataPlotter:
         # Close CSV file
         if hasattr(self, 'csv_file') and self.csv_file and not self.csv_file.closed:
             self.csv_file.close()
-            if self.current_log_filename: # Check if a log file was actually created
+            if hasattr(self, 'current_log_filename') and self.current_log_filename: # Check if a log file was actually created
                 print(f"Data logged to {self.current_log_filename}")
             else:
                 print("No active log file to save at cleanup.")
@@ -598,8 +611,8 @@ class DroneDataPlotter:
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Plot drone yaw data in real-time.')
-    parser.add_argument('--host', type=str, default='192.168.76.215',
-                       help='IP address of the drone (default: 192.168.76.215)')
+    parser.add_argument('--host', type=str, required=True,
+                       help='IP address of the drone (required)')
     parser.add_argument('--port', type=int, default=23,
                        help='Port number (default: 23)')
     parser.add_argument('--window', type=int, default=10,
@@ -619,12 +632,7 @@ def main():
     print(f"  Update Interval: {args.interval} ms")
     print("-" * 40)
     
-    plotter = DroneDataPlotter(
-        host=args.host,
-        port=args.port,
-        window_size=args.window,
-        update_interval=args.interval
-    )
+    plotter = DroneDataPlotter()
     
     try:
         plotter.run()
