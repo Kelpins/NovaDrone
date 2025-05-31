@@ -12,7 +12,7 @@ const char* password = "DwAJi54E";
 // MySecureOTApass
 
 // === ANGLE PID GAINS (Outer Loop) ===
-double PAngleRoll = 2.0;    
+double PAngleRoll = -2.0;   // NEGATIVE for inverted roll
 double IAngleRoll = 0.0;    
 double DAngleRoll = 0.0;    
 double PAnglePitch = 2.0;
@@ -24,8 +24,8 @@ double DAnglePitch = 0.0;
 double Kp_pitch = 0.025;
 double Ki_pitch = 0.0004;   // Updated from simulation optimal
 double Kd_pitch = 0.0;      // Derivative not needed
-double Kp_roll = -0.025;  
-double Ki_roll = -0.0004;    // Updated from simulation optimal
+double Kp_roll = -0.025;    // NEGATIVE for inverted roll
+double Ki_roll = -0.0004;   // NEGATIVE for inverted roll
 double Kd_roll = 0.0;       // Derivative not needed
 double Kp_yaw = 0.015;   
 double Ki_yaw = 0.0;        // P-only control sufficient
@@ -36,10 +36,10 @@ const double PID_OUTPUT_SCALING_PITCH = 1.0;
 const double PID_OUTPUT_SCALING_ROLL = 1.0;
 const double PID_OUTPUT_SCALING_YAW = 1.0;
 
-// Safety Limits
-const double MAX_PID_INTEGRAL = 50.0;
-const double MAX_TARGET_PITCH_ROLL = 20.0;
-const double MAX_ABS_PITCH_ROLL_SAFETY = 35.0;
+// Safety Limits - INCREASED
+const double MAX_PID_INTEGRAL = 100.0;        // Increased from 50.0
+const double MAX_TARGET_PITCH_ROLL = 30.0;    // Increased from 20.0
+const double MAX_ABS_PITCH_ROLL_SAFETY = 45.0; // Increased from 35.0
 
 // PID State Variables
 double angle_pitch_error_integral = 0.0;
@@ -288,14 +288,14 @@ void pid_equation(double Error, double P, double I, double D, double &PrevError,
   double Pterm = P * Error;
   double Iterm = PrevIterm + I * (Error + PrevError) * dt / 2;
   
-  if (Iterm > 400) Iterm = 400;
-  else if (Iterm < -400) Iterm = -400;
+  if (Iterm > 600) Iterm = 600;      // Increased from 400
+  else if (Iterm < -600) Iterm = -600; // Increased from 400
   
   double Dterm = D * (Error - PrevError) / dt;
   double PIDOutput = Pterm + Iterm + Dterm;
   
-  if (PIDOutput > 400) PIDOutput = 400;
-  else if (PIDOutput < -400) PIDOutput = -400;
+  if (PIDOutput > 600) PIDOutput = 600;      // Increased from 400
+  else if (PIDOutput < -600) PIDOutput = -600; // Increased from 400
   
   PIDReturn[0] = PIDOutput;
   PIDReturn[1] = Error;
@@ -436,7 +436,7 @@ void adjustPitchPID(double current_pitch_angle, int controller_pitch_input, doub
     pid_equation(ErrorRatePitch, Kp_pitch, Ki_pitch, Kd_pitch, pitch_previous_error, pitch_error_integral);
     double InputPitch = PIDReturn[0];
     
-    double scaled_pid_output = InputPitch / 800.0;
+    double scaled_pid_output = InputPitch / 1200.0;
     pitch_diff = scaled_pid_output;
 
     contributions[0] = 0.5 + scaled_pid_output;
@@ -462,7 +462,7 @@ void adjustRollPID(double current_roll_angle, int controller_roll_input, double 
     double InputRoll = PIDReturn[0];
     
     // Scale to 0-1 range for motor mixing
-    double scaled_pid_output = InputRoll / 800.0; // Scale from ±400 to ±0.5
+    double scaled_pid_output = InputRoll / 1200.0; // Scale from ±600 to ±0.5
     roll_diff = scaled_pid_output; // For telnet output
 
     // 4. Calculate motor contributions for roll
@@ -490,7 +490,7 @@ void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller
     double InputYaw = PIDReturn[0];
     
     // Scale to 0-1 range
-    double scaled_pid_output = InputYaw / 800.0;
+    double scaled_pid_output = InputYaw / 1200.0;
 
     // 3. Calculate motor contributions for yaw (keep existing mixing)
     contributions[0] = 0.5 - scaled_pid_output; // f_cw
