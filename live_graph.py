@@ -83,20 +83,28 @@ class DroneDataPlotter:
         self.ln_yaw_diff = None # For Yaw Difference plot
         
         self.start_time = time.time()
-        self.setup_plot()
 
-        # CSV Logging Initialization
-        self.log_filename = f"live_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
-        self.csv_file = open(self.log_filename, 'w', newline='')
-        self.csv_writer = csv.writer(self.csv_file)
+        # Test state management attributes
+        self.current_test_number = 0
+        self.test_state = "IDLE"  # Possible states: IDLE, PRE_TEST, TESTING, POST_TEST
+        self.throttle_deadzone_threshold = 1050.0
+        self.post_test_wait_duration = 5.0  # seconds
+        self.last_state_transition_time = time.time()
+
+        # Dynamic CSV Logging Initialization
+        self.log_filename_base = "live_log"
+        self.current_log_filename = None
+        self.csv_file = None
+        self.csv_writer = None
         # Updated header to include data_field_11 and reflect new v_scalar, motor scalar indexing
-        self.header = ["timestamp", "imu_roll", "imu_pitch", "imu_yaw", 
-                       "ctrl_roll", "ctrl_pitch", "ctrl_throttle", "ctrl_yaw", 
-                       "pitch_diff", "roll_diff", "current_yaw_target", "yaw_diff", 
-                       "data_field_11", "v_scalar", 
+        self.header = ["timestamp", "imu_roll", "imu_pitch", "imu_yaw",
+                       "ctrl_roll", "ctrl_pitch", "ctrl_throttle", "ctrl_yaw",
+                       "pitch_diff", "roll_diff", "current_yaw_target", "yaw_diff",
+                       "data_field_11", "v_scalar",
                        "f_cw_scalar", "b_cw_scalar", "f_ccw_scalar", "b_ccw_scalar"]
-        self.csv_writer.writerow(self.header)
-        print(f"Logging data to {self.log_filename}")
+        # The print statement for logging will be moved to when a test starts.
+
+        self.setup_plot()
 
     def setup_connection(self):
         """Set up the socket connection to the drone."""
@@ -222,6 +230,21 @@ class DroneDataPlotter:
         # Set initial time window
         self.end_time = datetime.now()
         self.start_time_dt = self.end_time - timedelta(seconds=self.window_size)
+
+    def _start_new_log_file(self):
+        """Handles the creation of a new log file for each test."""
+        if self.csv_file is not None:
+            self.csv_file.close()
+
+        self.current_test_number += 1
+        now = datetime.now()
+        self.current_log_filename = \
+            f"{self.log_filename_base}_test{self.current_test_number}_{now.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+
+        self.csv_file = open(self.current_log_filename, 'w', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+        self.csv_writer.writerow(self.header)
+        print(f"Starting Test {self.current_test_number}. Logging data to {self.current_log_filename}")
     
     def read_data(self):
         """Read and parse data from the socket stream (CSV format)."""
@@ -244,7 +267,8 @@ class DroneDataPlotter:
             # Log the raw data with a high-resolution timestamp
             log_timestamp = datetime.now().timestamp()
             log_row = [log_timestamp] + values_str
-            self.csv_writer.writerow(log_row)
+            if self.csv_writer and self.test_state in ["TEST_RUNNING", "WAITING_POST_TEST"]:
+                self.csv_writer.writerow(log_row)
                 
             try:
                 # Convert all values to float
@@ -320,64 +344,114 @@ class DroneDataPlotter:
     
     def update_plot(self, frame):
         """Update the plot with new data."""
+        # Check if figure is still valid
+        if not plt.fignum_exists(self.fig.number):
+            self.ani.event_source.stop()
+            return []
+            
         try:
-            # Read and process data
             new_data = self.read_data() # Fetch new data
-            if new_data is not None:
-                # Only update plot if we have enough data points
-                if len(self.timestamps) > 1:
-                    current_time = self.timestamps[-1]
-                    start_time = current_time - timedelta(seconds=self.window_size)
-                    
-                    # Update plot data - IMU
-                    self.ln_yaw.set_data(self.timestamps, self.yaw_data)
-                    self.ln_pitch.set_data(self.timestamps, self.pitch_data)
-                    self.ln_roll.set_data(self.timestamps, self.roll_data)
-                    
-                    # Update plot data - Controller
-                    self.ln_yaw_ctrl.set_data(self.timestamps, self.ctrl_yaw_data)
-                    self.ln_pitch_ctrl.set_data(self.timestamps, self.ctrl_pitch_data)
-                    self.ln_roll_ctrl.set_data(self.timestamps, self.ctrl_roll_data)
-                    
-                    # Update Yaw Difference plot
-                    self.ln_yaw_diff.set_data(self.timestamps, self.yaw_diff_data)
-                    
-                    # Update time window for data subplots (including new yaw_diff plot due to sharex)
-                    # No need to explicitly set_xlim for self.ax_yaw_diff if sharex is working as expected.
-                    # The primary axis (self.ax_yaw) along with its shared axes (self.ax_pitch, self.ax_roll, self.ax_yaw_diff)
-                    # will have their limits updated.
-                    for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll]: # ax_yaw_diff is implicitly handled by sharex=ax_yaw
-                        ax.set_xlim(start_time, current_time)
-                    
-                    # Update Drone UI
-                    # Helper function for color interpolation (can be defined inside or outside class method)
-                    def get_color(value, min_val, max_val, start_color_rgb=(0.85, 0.85, 0.95), end_color_rgb=(0.1, 0.1, 0.6)):
-                        if max_val == min_val: norm_value = 0.5 # Avoid division by zero
-                        else: norm_value = max(0, min(1, (value - min_val) / (max_val - min_val)))
-                        # Interpolate RGB values
-                        color = [start_color_rgb[i] + (end_color_rgb[i] - start_color_rgb[i]) * norm_value for i in range(3)]
-                        return tuple(color)
+            perform_plot_update = False
 
-                    # Update Throttle Display
-                    throttle_value = self.last_throttle
-                    self.throttle_display_shape.set_color(get_color(throttle_value, 1000, 2000))
-                    self.throttle_display_text.set_text(f'Throttle:\n{int(throttle_value)}')
+            # State: IDLE
+            if self.test_state == "IDLE":
+                if new_data is not None and self.last_throttle > self.throttle_deadzone_threshold:
+                    self.test_state = "TEST_RUNNING"
+                    self._start_new_log_file() # This also increments test_number
+                    self.last_state_transition_time = time.time()
+                    # Optional: Clear deques for a fresh plot for the new test
+                    for data_deque in [self.timestamps, self.yaw_data, self.pitch_data, self.roll_data,
+                                       self.ctrl_roll_data, self.ctrl_pitch_data, self.ctrl_throttle_data, self.ctrl_yaw_data,
+                                       self.pitch_diff_data, self.roll_diff_data, self.current_yaw_target_data, self.yaw_diff_data,
+                                       self.data_field_11_data, self.v_scalar_data,
+                                       self.f_cw_scalar_data, self.b_cw_scalar_data, self.f_ccw_scalar_data, self.b_ccw_scalar_data]:
+                        data_deque.clear()
+                    perform_plot_update = True # Start plotting active test data
+                else:
+                    # In IDLE and no test starting, do minimal work.
+                    # Title updated before returning artists
+                    pass # Minimal work if just idling
 
-                    # Update Motor Scalar Displays
-                    # Using the motor_config from setup_plot to get labels
-                    motor_config_update = {
-                        'f_ccw': {'label': 'F_CCW', 'value': self.last_f_ccw_scalar},
-                        'f_cw':  {'label': 'F_CW',  'value': self.last_f_cw_scalar},
-                        'b_ccw': {'label': 'B_CCW', 'value': self.last_b_ccw_scalar},
-                        'b_cw':  {'label': 'B_CW',  'value': self.last_b_cw_scalar}
-                    }
-                    for key, data in motor_config_update.items():
-                        self.motor_display_shapes[key].set_color(get_color(data['value'], 0.0, 1.0)) # Motor scalars are 0-1
-                        self.motor_display_texts[key].set_text(f"{data['label']}\n{data['value']:.2f}")
-                    
-                    # Update main figure suptitle with current time
-                    self.fig.suptitle(f'Drone Telemetry - {current_time.strftime("%H:%M:%S")}', fontsize=16)
-                    
+            # State: TEST_RUNNING
+            elif self.test_state == "TEST_RUNNING":
+                # Title updated before returning artists
+                if new_data is not None: # Data was read and processed by read_data
+                    perform_plot_update = True
+                    if self.last_throttle < self.throttle_deadzone_threshold:
+                        self.test_state = "WAITING_POST_TEST"
+                        self.last_state_transition_time = time.time()
+                else:
+                    # Potentially handle case where data read failed during a test
+                    pass
+
+            # State: WAITING_POST_TEST
+            elif self.test_state == "WAITING_POST_TEST":
+                # Title updated before returning artists
+                if new_data is not None: # Data was read
+                    perform_plot_update = True
+
+                if self.last_throttle > self.throttle_deadzone_threshold: # Test resumed
+                    self.test_state = "TEST_RUNNING"
+                    self.last_state_transition_time = time.time()
+                elif time.time() - self.last_state_transition_time > self.post_test_wait_duration:
+                    self.test_state = "IDLE"
+                    self.last_state_transition_time = time.time()
+                    print(f"Test {self.current_test_number} complete.")
+                    # Log file is already written. Next test will start a new one.
+
+            # Actual Plotting Logic (conditional)
+            if perform_plot_update and len(self.timestamps) > 1:
+                current_time = self.timestamps[-1]
+                start_time = current_time - timedelta(seconds=self.window_size)
+
+                # Update plot data - IMU
+                self.ln_yaw.set_data(self.timestamps, self.yaw_data)
+                self.ln_pitch.set_data(self.timestamps, self.pitch_data)
+                self.ln_roll.set_data(self.timestamps, self.roll_data)
+
+                # Update plot data - Controller
+                self.ln_yaw_ctrl.set_data(self.timestamps, self.ctrl_yaw_data)
+                self.ln_pitch_ctrl.set_data(self.timestamps, self.ctrl_pitch_data)
+                self.ln_roll_ctrl.set_data(self.timestamps, self.ctrl_roll_data)
+
+                # Update Yaw Difference plot
+                self.ln_yaw_diff.set_data(self.timestamps, self.yaw_diff_data)
+
+                for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll]: # ax_yaw_diff is implicitly handled by sharex=ax_yaw
+                    ax.set_xlim(start_time, current_time)
+
+                # Update Drone UI
+                def get_color(value, min_val, max_val, start_color_rgb=(0.85, 0.85, 0.95), end_color_rgb=(0.1, 0.1, 0.6)):
+                    if max_val == min_val: norm_value = 0.5
+                    else: norm_value = max(0, min(1, (value - min_val) / (max_val - min_val)))
+                    color = [start_color_rgb[i] + (end_color_rgb[i] - start_color_rgb[i]) * norm_value for i in range(3)]
+                    return tuple(color)
+
+                throttle_value = self.last_throttle
+                self.throttle_display_shape.set_color(get_color(throttle_value, 1000, 2000))
+                self.throttle_display_text.set_text(f'Throttle:\n{int(throttle_value)}')
+
+                motor_config_update = {
+                    'f_ccw': {'label': 'F_CCW', 'value': self.last_f_ccw_scalar},
+                    'f_cw':  {'label': 'F_CW',  'value': self.last_f_cw_scalar},
+                    'b_ccw': {'label': 'B_CCW', 'value': self.last_b_ccw_scalar},
+                    'b_cw':  {'label': 'B_CW',  'value': self.last_b_cw_scalar}
+                }
+                for key, data in motor_config_update.items():
+                    self.motor_display_shapes[key].set_color(get_color(data['value'], 0.0, 1.0))
+                    self.motor_display_texts[key].set_text(f"{data['label']}\n{data['value']:.2f}")
+
+            # Update title based on state AFTER state transitions and potential data processing
+            if self.test_state == "IDLE":
+                if self.current_test_number == 0:
+                    self.fig.suptitle(f'Drone Telemetry - Waiting for Test #1 - {datetime.now().strftime("%H:%M:%S")}', fontsize=16)
+                else:
+                    self.fig.suptitle(f'Drone Telemetry - Waiting for next Test (Test #{self.current_test_number} ended) - {datetime.now().strftime("%H:%M:%S")}', fontsize=16)
+            elif self.test_state == "TEST_RUNNING":
+                self.fig.suptitle(f'Drone Telemetry - Test #{self.current_test_number} Running - {datetime.now().strftime("%H:%M:%S")}', fontsize=16)
+            elif self.test_state == "WAITING_POST_TEST":
+                self.fig.suptitle(f'Drone Telemetry - Test #{self.current_test_number} Finishing - {datetime.now().strftime("%H:%M:%S")}', fontsize=16)
+
         except Exception as e:
             print(f"Error in update_plot: {e}")
             import traceback
@@ -390,33 +464,55 @@ class DroneDataPlotter:
                    self.ln_yaw_diff] # Added Yaw Diff line
         artists.extend(self.motor_display_shapes.values())
         artists.extend(self.motor_display_texts.values())
+        if self.fig._suptitle is not None:
+            artists.append(self.fig._suptitle)
         return artists
     
     def init_plot(self):
         """Initialize the plot with empty data and prepare UI elements."""
-        # IMU data lines
-        self.ln_yaw.set_data([], [])
-        self.ln_pitch.set_data([], [])
-        self.ln_roll.set_data([], [])
-        
-        # Controller data lines
-        self.ln_yaw_ctrl.set_data([], [])
-        self.ln_pitch_ctrl.set_data([], [])
-        self.ln_roll_ctrl.set_data([], [])
-        
-        # Yaw Difference line
-        if self.ln_yaw_diff: # Check if it's initialized
-            self.ln_yaw_diff.set_data([], [])
-        
-        # Initial state for UI elements is set in setup_plot.
-        # For blitting, all animated artists must be returned by init_func.
-        artists = [self.ln_yaw, self.ln_pitch, self.ln_roll,
-                   self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
-                   self.throttle_display_shape, self.throttle_display_text,
-                   self.ln_yaw_diff] # Added Yaw Diff line
-        artists.extend(self.motor_display_shapes.values())
-        artists.extend(self.motor_display_texts.values())
-        return artists
+        # Check if figure is still valid
+        if not hasattr(self, 'fig') or not plt.fignum_exists(self.fig.number):
+            return []
+            
+        try:
+            # IMU data lines
+            self.ln_yaw.set_data([], [])
+            self.ln_pitch.set_data([], [])
+            self.ln_roll.set_data([], [])
+            
+            # Controller data lines
+            self.ln_yaw_ctrl.set_data([], [])
+            self.ln_pitch_ctrl.set_data([], [])
+            self.ln_roll_ctrl.set_data([], [])
+            
+            # Yaw Difference line
+            if self.ln_yaw_diff: # Check if it's initialized
+                self.ln_yaw_diff.set_data([], [])
+
+            self.fig.suptitle(f'Drone Telemetry - Waiting for Test #1 - {datetime.now().strftime("%H:%M:%S")}')
+            
+            # Initial state for UI elements is set in setup_plot.
+            # For blitting, all animated artists must be returned by init_func.
+            artists = [self.ln_yaw, self.ln_pitch, self.ln_roll,
+                     self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
+                     self.throttle_display_shape, self.throttle_display_text]
+            
+            if self.ln_yaw_diff:
+                artists.append(self.ln_yaw_diff)
+                
+            artists.extend(self.motor_display_shapes.values())
+            artists.extend(self.motor_display_texts.values())
+            
+            if hasattr(self.fig, '_suptitle') and self.fig._suptitle is not None:
+                artists.append(self.fig._suptitle)
+                
+            # Filter out any None values that might have snuck in
+            artists = [a for a in artists if a is not None]
+            return artists
+            
+        except Exception as e:
+            print(f"Error in init_plot: {e}")
+            return []
     
     def run(self):
         """Start the data collection and plotting."""
@@ -428,7 +524,11 @@ class DroneDataPlotter:
             print(f"Starting data collection at {self.update_interval}ms interval. Close the plot window to exit...")
             print("Press Ctrl+C to stop")
             
-            # Set up the animation
+            # Create a new figure and setup plot
+            self.fig = plt.figure(figsize=(16, 9))
+            self.setup_plot()
+            
+            # Set up the animation with a reference to keep it alive
             self.ani = FuncAnimation(
                 self.fig, 
                 self.update_plot,
@@ -438,9 +538,9 @@ class DroneDataPlotter:
                 cache_frame_data=False
             )
             
-            # Use a more responsive backend if available
-            plt.ion()  # Turn on interactive mode
-            plt.show(block=True)  # Block until window is closed
+            # Show the plot and block until the window is closed
+            plt.tight_layout()
+            plt.show(block=True)
             
         except KeyboardInterrupt:
             print("\nShutdown requested...")
@@ -459,9 +559,13 @@ class DroneDataPlotter:
         print("Connection closed.")
 
         # Close CSV file
-        if hasattr(self, 'csv_file') and self.csv_file:
+        if hasattr(self, 'csv_file') and self.csv_file and not self.csv_file.closed:
             self.csv_file.close()
-            print(f"Data logged to {self.log_filename}")
+            if self.current_log_filename: # Check if a log file was actually created
+                print(f"Data logged to {self.current_log_filename}")
+            else:
+                print("No active log file to save at cleanup.")
+
 
 def parse_arguments():
     """Parse command line arguments."""

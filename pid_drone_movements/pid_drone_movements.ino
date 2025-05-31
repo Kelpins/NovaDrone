@@ -20,16 +20,16 @@ double IAnglePitch = 0.0;
 double DAnglePitch = 0.0;
 
 // === RATE PID GAINS (Inner Loop) ===
-// SIGNIFICANTLY INCREASED for proper response
-double Kp_pitch = 0.06;     // Was 0.025
-double Ki_pitch = 0.001;    // Was 0.0004
-double Kd_pitch = 0.0003;   // Added some D
-double Kp_roll = -0.06;     // NEGATIVE and increased
-double Ki_roll = -0.001;    // NEGATIVE and increased
-double Kd_roll = 0.0003;    // Added some D
-double Kp_yaw = 0.08;       // DOUBLED from 0.04 for better yaw control
-double Ki_yaw = 0.0008;     // Increased from 0.0002
-double Kd_yaw = 0.0;        // No derivative for yaw
+// Optimal values from PID_TUNING_RESULTS_SUMMARY.md simulation
+double Kp_pitch = 0.025;
+double Ki_pitch = 0.0004;   // Updated from simulation optimal
+double Kd_pitch = 0.0;      // Derivative not needed
+double Kp_roll = -0.025;    // NEGATIVE for inverted roll
+double Ki_roll = -0.0004;   // NEGATIVE for inverted roll
+double Kd_roll = 0.0;       // Derivative not needed
+double Kp_yaw = 0.015;   
+double Ki_yaw = 0.0;        // P-only control sufficient
+double Kd_yaw = 0.0;        // Derivative not needed
 
 // PID Output Scaling Factors
 const double PID_OUTPUT_SCALING_PITCH = 1.0;
@@ -118,47 +118,128 @@ double RateRoll = 0.0;
 double RatePitch = 0.0;
 double RateYaw = 0.0;
 
+
+// Function to parse PID commands
+bool parsePIDCommand(String command) {
+  int equalsIndex = command.indexOf('=');
+  if (equalsIndex == -1) {
+    return false; // No '=' found, invalid command
+  }
+
+  String varName = command.substring(0, equalsIndex);
+  String varValueStr = command.substring(equalsIndex + 1);
+  double varValue = varValueStr.toDouble(); // Use toDouble for double types
+
+  if (varName.equals("P_ANGLE_ROLL")) PAngleRoll = varValue;
+  else if (varName.equals("I_ANGLE_ROLL")) IAngleRoll = varValue;
+  else if (varName.equals("D_ANGLE_ROLL")) DAngleRoll = varValue;
+  else if (varName.equals("P_ANGLE_PITCH")) PAnglePitch = varValue;
+  else if (varName.equals("I_ANGLE_PITCH")) IAnglePitch = varValue;
+  else if (varName.equals("D_ANGLE_PITCH")) DAnglePitch = varValue;
+  else if (varName.equals("KP_PITCH")) Kp_pitch = varValue;
+  else if (varName.equals("KI_PITCH")) Ki_pitch = varValue;
+  else if (varName.equals("KD_PITCH")) Kd_pitch = varValue;
+  else if (varName.equals("KP_ROLL")) Kp_roll = varValue;
+  else if (varName.equals("KI_ROLL")) Ki_roll = varValue;
+  else if (varName.equals("KD_ROLL")) Kd_roll = varValue;
+  else if (varName.equals("KP_YAW")) Kp_yaw = varValue;
+  else if (varName.equals("KI_YAW")) Ki_yaw = varValue;
+  else if (varName.equals("KD_YAW")) Kd_yaw = varValue;
+  else {
+    return false; // Invalid variable name
+  }
+  return true;
+}
+
+void handleTelnetCommands() {
+  if (telnetClient && telnetClient.connected() && telnetClient.available()) {
+    char c = telnetClient.read();
+    if (c == '\n') {
+      // Process the command
+      telnetCommandBuffer.trim(); // Remove any leading/trailing whitespace
+      if (telnetCommandBuffer.startsWith("!AUTH ")) {
+        String passwordAttempt = telnetCommandBuffer.substring(6);
+        if (passwordAttempt.equals(SECRET_PASSWORD)) {
+          isAuthenticated = true;
+          Serial.println("Authentication successful");
+        } else {
+          isAuthenticated = false; // Reset auth on failed attempt
+          Serial.println("Authentication failed");
+        }
+      } else if (telnetCommandBuffer.startsWith("!PID ")) {
+        if (isAuthenticated) {
+          String pidCommand = telnetCommandBuffer.substring(5);
+          if (!parsePIDCommand(pidCommand)) {
+            Serial.println("Invalid PID command");
+          } else {
+            Serial.println("PID command processed: " + pidCommand); // For debugging
+          }
+        } else {
+          Serial.println("Authentication required for PID commands");
+        }
+      }
+      telnetCommandBuffer = ""; // Clear the buffer for the next command
+    } else if (c != '\r') { // Ignore carriage return
+      telnetCommandBuffer += c;
+    }
+  }
+}
+
 void printOutput(const char* message) {
-  if (telnetClient && telnetClient.connected()) {
-    telnetClient.print(message);
+  String msgStr = String(message);
+  if (msgStr.startsWith("!AUTH") || msgStr.startsWith("!PID")) {
+    Serial.print(message); // Print to Serial only for commands
   } else {
-    Serial.print(message);
+    if (telnetClient && telnetClient.connected()) {
+      telnetClient.print(message);
+    }
+    Serial.print(message); // Always print to Serial for non-commands
   }
 }
 void printOutput(String message) {
-  if (telnetClient && telnetClient.connected()) {
-    telnetClient.print(message);
+  if (message.startsWith("!AUTH") || message.startsWith("!PID")) {
+    Serial.print(message); // Print to Serial only for commands
   } else {
-    Serial.print(message);
+    if (telnetClient && telnetClient.connected()) {
+      telnetClient.print(message);
+    }
+    Serial.print(message); // Always print to Serial for non-commands
   }
 }
 void printOutput(double value) {
+  // For double values, we don't expect them to be commands, so print to both
   if (telnetClient && telnetClient.connected()) {
     telnetClient.print(value);
-  } else {
-    Serial.print(value);
   }
+  Serial.print(value);
 }
 void printlnOutput(const char* message) {
-  if (telnetClient && telnetClient.connected()) {
-    telnetClient.println(message);
+  String msgStr = String(message);
+  if (msgStr.startsWith("!AUTH") || msgStr.startsWith("!PID")) {
+    Serial.println(message); // Print to Serial only for commands
   } else {
-    Serial.println(message);
+    if (telnetClient && telnetClient.connected()) {
+      telnetClient.println(message);
+    }
+    Serial.println(message); // Always print to Serial for non-commands
   }
 }
 void printlnOutput(String message) {
-  if (telnetClient && telnetClient.connected()) {
-    telnetClient.println(message);
+  if (message.startsWith("!AUTH") || message.startsWith("!PID")) {
+    Serial.println(message); // Print to Serial only for commands
   } else {
-    Serial.println(message);
+    if (telnetClient && telnetClient.connected()) {
+      telnetClient.println(message);
+    }
+    Serial.println(message); // Always print to Serial for non-commands
   }
 }
 void printlnOutput(double value) {
+  // For double values, we don't expect them to be commands, so print to both
   if (telnetClient && telnetClient.connected()) {
     telnetClient.println(value);
-  } else {
-    Serial.println(value);
   }
+  Serial.println(value);
 }
 
 void IRAM_ATTR ppmISR() {
@@ -227,6 +308,7 @@ void setupWiFiTelnet() {
 }
 
 void handleTelnetClient() {
+  handleTelnetCommands(); // Process incoming commands first
   ArduinoOTA.handle();
 
   if (wifiServer.hasClient()) {
@@ -527,16 +609,12 @@ void updateYawTargetAndContributionsPID(double current_yaw_angle, int controller
 
 
 void updateMotorVoltagesPID(double dt) {
-  // Motor power constants - adjusted to counter clockwise spin and level out
-  // Back motors need more power than front, CCW needs more to counter CW spin
-  double f_cw_const = 0.92;     // Front CW - reduced for CW spin compensation
-  double b_cw_const = 0.97;     // Back CW - higher than front, slight reduction for CW spin
-  double f_ccw_const = 0.94;    // Front CCW - base front power
-  double b_ccw_const = 1.00;    // Back CCW - maximum for weakest motor + back boost
-  
-  // Minimum motor command to ensure motors start (especially for weak BCCW)
-  const double MIN_MOTOR_CMD = 0.10;  // 10% minimum when throttle > 0
-  const double MIN_BCCW_CMD = 0.20;   // 20% minimum for BCCW specifically
+  // Motor power constants - tested values for straight flight
+  // These compensate for individual motor/prop differences
+  double f_cw_const = 0.96725;  // Front clockwise
+  double b_cw_const = 0.9825;   // Back clockwise  
+  double f_ccw_const = 0.9625;  // Front counter-clockwise
+  double b_ccw_const = 0.95;    // Back counter-clockwise (weakest motor)
   
   double pitch_contributions[4];
   double roll_contributions[4];
@@ -664,6 +742,7 @@ void updateMotorVoltagesPID(double dt) {
 }
 
 void loop(){
+  handleTelnetCommands(); // Process incoming commands first
   handleTelnetClient(); 
 
   updateStates();
