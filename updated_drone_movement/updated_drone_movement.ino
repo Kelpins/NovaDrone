@@ -498,10 +498,10 @@ void updateMotorVoltages() {
   double f_ccw_const = 0.9625; // spinning f_ccw // most powerful
   double b_ccw_const = 0.95; // spinning b_ccw
 
-  f_cw_scalar = f_cw_const * (pitchVals[0] + rollVals[0] + yawVals[0]) / 3.0;
-  b_cw_scalar = b_cw_const * (pitchVals[1] + rollVals[1] + yawVals[1]) / 3.0;
-  f_ccw_scalar = f_ccw_const * (pitchVals[2] + rollVals[2] + yawVals[2]) / 3.0;
-  b_ccw_scalar = b_ccw_const * (pitchVals[3] + rollVals[3] + yawVals[3]) / 3.0;
+  f_cw_scalar = f_cw_const * pitchVals[0];//rollVals[0];//yawVals[0];//(pitchVals[0] + rollVals[0] + yawVals[0]) / 3.0;
+  b_cw_scalar = b_cw_const * pitchVals[1];//rollVals[1];//yawVals[1];//(pitchVals[1] + rollVals[1] + yawVals[1]) / 3.0;
+  f_ccw_scalar = f_ccw_const * pitchVals[2];//rollVals[2];//yawVals[2];//(pitchVals[2] + rollVals[2] + yawVals[2]) / 3.0;
+  b_ccw_scalar = b_ccw_const * pitchVals[3];//rollVals[3];//yawVals[3];//(pitchVals[3] + rollVals[3] + yawVals[3]) / 3.0;
 
   v_scalar = (cout_throttle - 1000.0) / 1000.0;
   if (cout_vra > 1050 || cout_vrb > 1050 || cout_throttle < 900) {
