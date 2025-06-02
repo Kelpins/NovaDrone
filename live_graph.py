@@ -110,9 +110,9 @@ class DroneDataPlotter:
         #               'timestamp' is special and not from the drone's CSV line, so its csv_index is None.
         self.header_info = [
             {'name': 'Timestamp', 'csv_col_name': 'timestamp', 'data_category': None, 'data_key': 'timestamps', 'latest_val_key': None, 'csv_index': None}, # Special case for our generated timestamp
-            {'name': 'IMU Roll', 'csv_col_name': 'imu_roll', 'data_category': 'imu_data', 'data_key': 'roll', 'latest_val_key': 'imu_roll', 'csv_index': 0},
+            {'name': 'IMU Yaw', 'csv_col_name': 'imu_yaw', 'data_category': 'imu_data', 'data_key': 'yaw', 'latest_val_key': 'imu_yaw', 'csv_index': 0},
             {'name': 'IMU Pitch', 'csv_col_name': 'imu_pitch', 'data_category': 'imu_data', 'data_key': 'pitch', 'latest_val_key': 'imu_pitch', 'csv_index': 1},
-            {'name': 'IMU Yaw', 'csv_col_name': 'imu_yaw', 'data_category': 'imu_data', 'data_key': 'yaw', 'latest_val_key': 'imu_yaw', 'csv_index': 2},
+            {'name': 'IMU Roll', 'csv_col_name': 'imu_roll', 'data_category': 'imu_data', 'data_key': 'roll', 'latest_val_key': 'imu_roll', 'csv_index': 2},
             {'name': 'Ctrl Roll', 'csv_col_name': 'ctrl_roll', 'data_category': 'ctrl_data', 'data_key': 'roll', 'latest_val_key': 'ctrl_roll', 'csv_index': 3},
             {'name': 'Ctrl Pitch', 'csv_col_name': 'ctrl_pitch', 'data_category': 'ctrl_data', 'data_key': 'pitch', 'latest_val_key': 'ctrl_pitch', 'csv_index': 4},
             {'name': 'Ctrl Throttle', 'csv_col_name': 'ctrl_throttle', 'data_category': 'ctrl_data', 'data_key': 'throttle', 'latest_val_key': 'throttle', 'csv_index': 5},
