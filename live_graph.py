@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from collections import deque
 
 class DroneDataPlotter:
-    def __init__(self, host, port, window_size=30, update_interval=200):  # Default to 5Hz (200ms)
+    def __init__(self, host="192.168.76.215", port=23, window_size=30, update_interval=200):  # Default to 5Hz (200ms)
         """
         Initialize the DroneDataPlotter.
         
@@ -30,50 +30,53 @@ class DroneDataPlotter:
         
         # Initialize data storage with deques for efficient appending/popping
         self.timestamps = deque(maxlen=self.max_data_points)
-        # IMU data
-        self.yaw_data = deque(maxlen=self.max_data_points)
-        self.pitch_data = deque(maxlen=self.max_data_points)
-        self.roll_data = deque(maxlen=self.max_data_points)
-        # Controller data
-        self.ctrl_roll_data = deque(maxlen=self.max_data_points)
-        self.ctrl_pitch_data = deque(maxlen=self.max_data_points)
-        self.ctrl_throttle_data = deque(maxlen=self.max_data_points)
-        self.ctrl_yaw_data = deque(maxlen=self.max_data_points)
-        
-        # Data fields from CSV (ensure all 17 are covered)
-        # vals[0-2] are imu_roll, imu_pitch, imu_yaw (already covered by roll_data etc.)
-        # vals[3-6] are cout_roll, cout_pitch, cout_throttle, cout_yaw (already covered by ctrl_roll_data etc.)
-        self.pitch_diff_data = deque(maxlen=self.max_data_points) # vals[7] (index based on header: imu_roll,imu_pitch,imu_yaw,ctrl_roll,ctrl_pitch,ctrl_throttle,ctrl_yaw, pitch_diff, ...)
-        self.roll_diff_data = deque(maxlen=self.max_data_points)  # vals[8]
-        self.current_yaw_target_data = deque(maxlen=self.max_data_points) # vals[9]
-        self.yaw_diff_data = deque(maxlen=self.max_data_points)    # vals[10]
-        # vals[11] will be a new field, named 'data_field_11' for now
-        self.data_field_11_data = deque(maxlen=self.max_data_points) # For vals[11]
-        self.v_scalar_data = deque(maxlen=self.max_data_points)    # vals[12] (shifted from 11)
-        
-        # Motor scalars start from vals[13]
-        self.f_cw_scalar_data = deque(maxlen=self.max_data_points) # vals[13]
-        self.b_cw_scalar_data = deque(maxlen=self.max_data_points) # vals[14]
-        self.f_ccw_scalar_data = deque(maxlen=self.max_data_points)# vals[15]
-        self.b_ccw_scalar_data = deque(maxlen=self.max_data_points)# vals[16]
+
+        self.imu_data = {
+            'roll': deque(maxlen=self.max_data_points),
+            'pitch': deque(maxlen=self.max_data_points),
+            'yaw': deque(maxlen=self.max_data_points),
+        }
+        self.ctrl_data = {
+            'roll': deque(maxlen=self.max_data_points),
+            'pitch': deque(maxlen=self.max_data_points),
+            'throttle': deque(maxlen=self.max_data_points),
+            'yaw': deque(maxlen=self.max_data_points),
+        }
+        self.derived_data = {
+            'pitch_diff': deque(maxlen=self.max_data_points),
+            'roll_diff': deque(maxlen=self.max_data_points),
+            'current_yaw_target': deque(maxlen=self.max_data_points),
+            'yaw_diff': deque(maxlen=self.max_data_points),
+            'data_field_11': deque(maxlen=self.max_data_points), # Placeholder for vals[11]
+        }
+        self.motor_scalar_data = {
+            'v': deque(maxlen=self.max_data_points),      # vals[12]
+            'f_cw': deque(maxlen=self.max_data_points),   # vals[13]
+            'b_cw': deque(maxlen=self.max_data_points),   # vals[14]
+            'f_ccw': deque(maxlen=self.max_data_points),  # vals[15]
+            'b_ccw': deque(maxlen=self.max_data_points),  # vals[16]
+        }
 
         # Attributes to store the latest values for UI update and general reference
-        self.last_imu_roll = 0.0
-        self.last_imu_pitch = 0.0
-        self.last_imu_yaw = 0.0
-        self.last_ctrl_roll = 0.0
-        self.last_ctrl_pitch = 0.0
-        self.last_throttle = 1000.0 # (from vals[5])
-        self.last_ctrl_yaw = 0.0
-        self.last_pitch_diff = 0.0
-        self.last_roll_diff = 0.0
-        self.last_current_yaw_target = 0.0
-        self.last_yaw_diff = 0.0 # (from vals[10])
-        self.last_v_scalar = 0.0 # (from vals[12])
-        self.last_f_cw_scalar = 0.0 # (from vals[13])
-        self.last_b_cw_scalar = 0.0 # (from vals[14])
-        self.last_f_ccw_scalar = 0.0# (from vals[15])
-        self.last_b_ccw_scalar = 0.0# (from vals[16])
+        self.latest_values = {
+            'imu_roll': 0.0,
+            'imu_pitch': 0.0,
+            'imu_yaw': 0.0,
+            'ctrl_roll': 0.0,
+            'ctrl_pitch': 0.0,
+            'throttle': 1000.0, # Default throttle, matches old self.last_throttle
+            'ctrl_yaw': 0.0,
+            'pitch_diff': 0.0,
+            'roll_diff': 0.0,
+            'current_yaw_target': 0.0,
+            'yaw_diff': 0.0,
+            'data_field_11': 0.0, # Placeholder for vals[11]
+            'v_scalar': 0.0,
+            'f_cw_scalar': 0.0,
+            'b_cw_scalar': 0.0,
+            'f_ccw_scalar': 0.0,
+            'b_ccw_scalar': 0.0,
+        }
 
         # Placeholders for UI elements
         self.throttle_display_shape = None
@@ -96,12 +99,36 @@ class DroneDataPlotter:
         self.current_log_filename = None
         self.csv_file = None
         self.csv_writer = None
-        # Updated header to include data_field_11 and reflect new v_scalar, motor scalar indexing
-        self.header = ["timestamp", "imu_roll", "imu_pitch", "imu_yaw",
-                       "ctrl_roll", "ctrl_pitch", "ctrl_throttle", "ctrl_yaw",
-                       "pitch_diff", "roll_diff", "current_yaw_target", "yaw_diff",
-                       "data_field_11", "v_scalar",
-                       "f_cw_scalar", "b_cw_scalar", "f_ccw_scalar", "b_ccw_scalar"]
+
+        # Header definition:
+        # 'name': Display name for plots/UI if needed.
+        # 'csv_col_name': The exact name of the column in the CSV file.
+        # 'data_category': Which main dictionary holds this data's deque (e.g., 'imu_data', 'ctrl_data').
+        # 'data_key': The key within the data_category dictionary for this specific data's deque.
+        # 'latest_val_key': The key used in self.latest_values dictionary.
+        # 'csv_index': The expected 0-based index in the incoming CSV data line (after splitting by comma).
+        #               'timestamp' is special and not from the drone's CSV line, so its csv_index is None.
+        self.header_info = [
+            {'name': 'Timestamp', 'csv_col_name': 'timestamp', 'data_category': None, 'data_key': 'timestamps', 'latest_val_key': None, 'csv_index': None}, # Special case for our generated timestamp
+            {'name': 'IMU Roll', 'csv_col_name': 'imu_roll', 'data_category': 'imu_data', 'data_key': 'roll', 'latest_val_key': 'imu_roll', 'csv_index': 0},
+            {'name': 'IMU Pitch', 'csv_col_name': 'imu_pitch', 'data_category': 'imu_data', 'data_key': 'pitch', 'latest_val_key': 'imu_pitch', 'csv_index': 1},
+            {'name': 'IMU Yaw', 'csv_col_name': 'imu_yaw', 'data_category': 'imu_data', 'data_key': 'yaw', 'latest_val_key': 'imu_yaw', 'csv_index': 2},
+            {'name': 'Ctrl Roll', 'csv_col_name': 'ctrl_roll', 'data_category': 'ctrl_data', 'data_key': 'roll', 'latest_val_key': 'ctrl_roll', 'csv_index': 3},
+            {'name': 'Ctrl Pitch', 'csv_col_name': 'ctrl_pitch', 'data_category': 'ctrl_data', 'data_key': 'pitch', 'latest_val_key': 'ctrl_pitch', 'csv_index': 4},
+            {'name': 'Ctrl Throttle', 'csv_col_name': 'ctrl_throttle', 'data_category': 'ctrl_data', 'data_key': 'throttle', 'latest_val_key': 'throttle', 'csv_index': 5},
+            {'name': 'Ctrl Yaw', 'csv_col_name': 'ctrl_yaw', 'data_category': 'ctrl_data', 'data_key': 'yaw', 'latest_val_key': 'ctrl_yaw', 'csv_index': 6},
+            {'name': 'Pitch Diff', 'csv_col_name': 'pitch_diff', 'data_category': 'derived_data', 'data_key': 'pitch_diff', 'latest_val_key': 'pitch_diff', 'csv_index': 7},
+            {'name': 'Roll Diff', 'csv_col_name': 'roll_diff', 'data_category': 'derived_data', 'data_key': 'roll_diff', 'latest_val_key': 'roll_diff', 'csv_index': 8},
+            {'name': 'Current Yaw Target', 'csv_col_name': 'current_yaw_target', 'data_category': 'derived_data', 'data_key': 'current_yaw_target', 'latest_val_key': 'current_yaw_target', 'csv_index': 9},
+            {'name': 'Yaw Diff', 'csv_col_name': 'yaw_diff', 'data_category': 'derived_data', 'data_key': 'yaw_diff', 'latest_val_key': 'yaw_diff', 'csv_index': 10},
+            {'name': 'V Scalar', 'csv_col_name': 'v_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'v', 'latest_val_key': 'v_scalar', 'csv_index': 11},
+            {'name': 'F CW Scalar', 'csv_col_name': 'f_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_cw', 'latest_val_key': 'f_cw_scalar', 'csv_index': 12},
+            {'name': 'B CW Scalar', 'csv_col_name': 'b_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_cw', 'latest_val_key': 'b_cw_scalar', 'csv_index': 13},
+            {'name': 'F CCW Scalar', 'csv_col_name': 'f_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_ccw', 'latest_val_key': 'f_ccw_scalar', 'csv_index': 14},
+            {'name': 'B CCW Scalar', 'csv_col_name': 'b_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_ccw', 'latest_val_key': 'b_ccw_scalar', 'csv_index': 15},
+        ]
+        # Generate the simple list of CSV column names for writing the CSV header row
+        self.header = [info['csv_col_name'] for info in self.header_info]
         # The print statement for logging will be moved to when a test starts.
 
         self.setup_plot()
@@ -120,120 +147,132 @@ class DroneDataPlotter:
             return False
     
     def setup_plot(self):
-        """Initialize the matplotlib plot with three subplots for yaw, pitch, and roll."""
-        # Configure plot style
+        """Initialize the matplotlib plot using a configuration-driven approach."""
         plt.style.use('default')
         plt.rcParams.update({
-            'axes.grid': True,
-            'grid.alpha': 0.3,
-            'axes.edgecolor': '#333333',
-            'axes.labelcolor': '#333333',
-            'text.color': '#333333',
-            'xtick.color': '#333333',
-            'ytick.color': '#333333',
-            'figure.facecolor': 'white',
+            'axes.grid': True, 'grid.alpha': 0.3, 'axes.edgecolor': '#333333',
+            'axes.labelcolor': '#333333', 'text.color': '#333333',
+            'xtick.color': '#333333', 'ytick.color': '#333333', 'figure.facecolor': 'white',
         })
+
+        if not hasattr(self, 'fig') or self.fig is None: # Ensure fig is created if not existing (e.g. called standalone)
+             self.fig = plt.figure(figsize=(16, 9))
+        else:
+            self.fig.clf() # Clear figure if it already exists, to avoid overlaying plots on rerun
+
+        gs = self.fig.add_gridspec(3, 2, height_ratios=[1, 1, 1], width_ratios=[3, 1])
         
-        # Create subplots with new layout
-        self.fig = plt.figure(figsize=(16, 9)) 
-        # Use width_ratios=[3,1] to give more space to data plots as per latest plan
-        gs = self.fig.add_gridspec(3, 2, height_ratios=[1, 1, 1], width_ratios=[3, 1]) 
+        self.axes = {}
+        self.lines = {}
 
-        self.ax_yaw = self.fig.add_subplot(gs[0, 0])
-        self.ax_pitch = self.fig.add_subplot(gs[1, 0], sharex=self.ax_yaw)
-        self.ax_roll = self.fig.add_subplot(gs[2, 0], sharex=self.ax_yaw)
-        # self.ax_throttle (line plot) is removed.
+        plot_configs = [
+            {
+                'name': 'yaw', 'grid_spec_idx': gs[0, 0], 'sharex_name': None,
+                'ylabel': 'Yaw', 'ylim': (-200, 200), 'yticks': range(-180, 181, 45),
+                'data_series': [
+                    {'line_key': 'yaw_imu', 'data_key': 'yaw', 'plot_args': {'color': 'b', 'linestyle': '-', 'lw': 1.5, 'label': 'Yaw'}},
+                    {'line_key': 'yaw_ctrl', 'data_key': 'yaw', 'plot_args': {'color': 'b', 'linestyle': '--', 'lw': 1, 'alpha': 0.7, 'label': 'Yaw (Ctrl)'}}
+                ]
+            },
+            {
+                'name': 'pitch', 'grid_spec_idx': gs[1, 0], 'sharex_name': 'yaw',
+                'ylabel': 'Pitch', 'ylim': (-90, 90), 'yticks': range(-90, 91, 30),
+                'data_series': [
+                    {'line_key': 'pitch_imu', 'data_key': 'pitch', 'plot_args': {'color': 'g', 'linestyle': '-', 'lw': 1.5, 'label': 'Pitch'}},
+                    {'line_key': 'pitch_ctrl', 'data_key': 'pitch', 'plot_args': {'color': 'g', 'linestyle': '--', 'lw': 1, 'alpha': 0.7, 'label': 'Pitch (Ctrl)'}}
+                ]
+            },
+            {
+                'name': 'roll', 'grid_spec_idx': gs[2, 0], 'sharex_name': 'yaw',
+                'ylabel': 'Roll', 'ylim': (-60, 60), 'yticks': range(-45, 46, 15), 'xlabel': 'Time',
+                'data_series': [
+                    {'line_key': 'roll_imu', 'data_key': 'roll', 'plot_args': {'color': 'r', 'linestyle': '-', 'lw': 1.5, 'label': 'Roll'}},
+                    {'line_key': 'roll_ctrl', 'data_key': 'roll', 'plot_args': {'color': 'r', 'linestyle': '--', 'lw': 1, 'alpha': 0.7, 'label': 'Roll (Ctrl)'}}
+                ]
+            },
+            {
+                'name': 'yaw_diff', 'grid_spec_idx': gs[2, 1], 'sharex_name': 'yaw',
+                'ylabel': 'Yaw Diff (deg)', 'ylim': (-45, 45), 'yticks': None, 'xlabel': 'Time', # yticks can be default
+                'data_series': [
+                    {'line_key': 'yaw_diff_line', 'data_key': 'yaw_diff', 'plot_args': {'color': 'c', 'linestyle': '-', 'lw': 1.5, 'label': 'Yaw Diff'}}
+                ]
+            }
+        ]
 
-        # Drone UI subplot (top-right, spanning two rows of the right column)
-        self.ax_drone_ui = self.fig.add_subplot(gs[0:2, 1]) # Corrected rowspan to gs[0:2, 1] for clarity
-        self.ax_drone_ui.set_title('Drone Status', fontsize=10)
-        self.ax_drone_ui.set_xticks([])
-        self.ax_drone_ui.set_yticks([])
-        self.ax_drone_ui.axis('off') 
-        self.ax_drone_ui.set_aspect('equal', adjustable='box')
-        self.ax_drone_ui.set_ylim(-1.3, 1.3) 
-        self.ax_drone_ui.set_xlim(-1.3, 1.3)
+        for config in plot_configs:
+            ax = self.fig.add_subplot(config['grid_spec_idx'], sharex=self.axes.get(config['sharex_name']))
+            self.axes[config['name']] = ax
+            ax.set_ylabel(config['ylabel'])
+            ax.set_ylim(config['ylim'])
+            if config['yticks'] is not None:
+                ax.set_yticks(config['yticks'])
+            if config.get('xlabel'):
+                ax.set_xlabel(config['xlabel'])
 
-        # Draw Drone UI Elements (initial state)
-        # Central Square (Throttle)
-        # Adjusted size and position for clarity
+            current_lines = []
+            for series_conf in config['data_series']:
+                # Determine data category based on line_key or other logic if needed
+                # For now, imu lines use self.imu_data, ctrl lines use self.ctrl_data, yaw_diff uses self.derived_data
+                # This logic might need to be more robust or explicit in config
+                data_cat_map = {'imu': self.imu_data, 'ctrl': self.ctrl_data, 'line': self.derived_data} # Simplified
+                category_prefix = series_conf['line_key'].split('_')[1] if '_' in series_conf['line_key'] else 'line'
+
+                # Plotting empty data initially, actual data comes from update_plot
+                line, = ax.plot([], [], **series_conf['plot_args'])
+                self.lines[series_conf['line_key']] = line
+                current_lines.append(line)
+
+            ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            ax.legend(loc='upper right')
+
+        # Drone UI subplot
+        self.axes['drone_ui'] = self.fig.add_subplot(gs[0:2, 1])
+        ax_drone_ui = self.axes['drone_ui']
+        ax_drone_ui.set_title('Drone Status', fontsize=10)
+        ax_drone_ui.set_xticks([])
+        ax_drone_ui.set_yticks([])
+        ax_drone_ui.axis('off')
+        ax_drone_ui.set_aspect('equal', adjustable='box')
+        ax_drone_ui.set_ylim(-1.3, 1.3)
+        ax_drone_ui.set_xlim(-1.3, 1.3)
+
         self.throttle_display_shape = patches.Rectangle((-0.4, -0.4), 0.8, 0.8, color='lightgray', ec='black', lw=1)
-        self.ax_drone_ui.add_patch(self.throttle_display_shape)
-        self.throttle_display_text = self.ax_drone_ui.text(0, 0, f'Throttle:\n{int(self.last_throttle)}', ha='center', va='center', fontsize=10)
+        ax_drone_ui.add_patch(self.throttle_display_shape)
+        self.throttle_display_text = ax_drone_ui.text(0, 0, f'Throttle:\n{int(self.latest_values["throttle"])}', ha='center', va='center', fontsize=10)
 
-        # Motor Circles (Propellers)
-        motor_radius = 0.35 # Slightly larger radius
-        # Adjusted positions for better spacing
-        motor_config = {
-            'f_ccw': {'label': 'F_CCW', 'pos': (-0.8, 0.8)}, # Top-left
-            'f_cw':  {'label': 'F_CW',  'pos': (0.8, 0.8)},  # Top-right
-            'b_ccw': {'label': 'B_CCW', 'pos': (-0.8, -0.8)},# Bottom-left
-            'b_cw':  {'label': 'B_CW',  'pos': (0.8, -0.8)}  # Bottom-right
+        motor_radius = 0.35
+        motor_config_ui = { # Renamed to avoid conflict if 'motor_config' is used elsewhere
+            'f_ccw': {'label': 'F_CCW', 'pos': (-0.8, 0.8)}, 'f_cw':  {'label': 'F_CW',  'pos': (0.8, 0.8)},
+            'b_ccw': {'label': 'B_CCW', 'pos': (-0.8, -0.8)}, 'b_cw':  {'label': 'B_CW',  'pos': (0.8, -0.8)}
         }
-
-        for key, config_item in motor_config.items():
-            shape = patches.Circle(config_item['pos'], radius=motor_radius, color='lightgray', ec='black', lw=1)
+        self.motor_display_shapes = {} # Ensure these are initialized here
+        self.motor_display_texts = {}
+        for key, m_config in motor_config_ui.items():
+            shape = patches.Circle(m_config['pos'], radius=motor_radius, color='lightgray', ec='black', lw=1)
             self.motor_display_shapes[key] = shape
-            self.ax_drone_ui.add_patch(shape)
-            initial_value = getattr(self, f"last_{key}_scalar", 0.0)
-            text = self.ax_drone_ui.text(config_item['pos'][0], config_item['pos'][1], f"{config_item['label']}\n{initial_value:.2f}", 
-                                         ha='center', va='center', fontsize=8)
+            ax_drone_ui.add_patch(shape)
+            scalar_key = f"{key}_scalar"
+            initial_value = self.latest_values.get(scalar_key, 0.0)
+            text = ax_drone_ui.text(m_config['pos'][0], m_config['pos'][1], f"{m_config['label']}\n{initial_value:.2f}", ha='center', va='center', fontsize=8)
             self.motor_display_texts[key] = text
-        
-        # Yaw plot (-180° to 180°)
-        self.ln_yaw, = self.ax_yaw.plot([], [], 'b-', lw=1.5, label='Yaw')
-        self.ln_yaw_ctrl, = self.ax_yaw.plot([], [], 'b--', lw=1, alpha=0.7, label='Yaw (Ctrl)')
-        self.ax_yaw.set_ylabel('Yaw')
-        self.ax_yaw.set_ylim(-200, 200)
-        self.ax_yaw.set_yticks(range(-180, 181, 45))
-        self.ax_yaw.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_yaw.legend(loc='upper right')
-        
-        # Pitch plot (-90° to 90°)
-        self.ln_pitch, = self.ax_pitch.plot([], [], 'g-', lw=1.5, label='Pitch')
-        self.ln_pitch_ctrl, = self.ax_pitch.plot([], [], 'g--', lw=1, alpha=0.7, label='Pitch (Ctrl)')
-        self.ax_pitch.set_ylabel('Pitch')
-        self.ax_pitch.set_ylim(-90, 90)
-        self.ax_pitch.set_yticks(range(-90, 91, 30))
-        self.ax_pitch.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_pitch.legend(loc='upper right')
-        
-        # Roll plot (-45° to 45°)
-        self.ln_roll, = self.ax_roll.plot([], [], 'r-', lw=1.5, label='Roll')
-        self.ln_roll_ctrl, = self.ax_roll.plot([], [], 'r--', lw=1, alpha=0.7, label='Roll (Ctrl)')
-        self.ax_roll.set_ylabel('Roll')
-        self.ax_roll.set_ylim(-60, 60)
-        self.ax_roll.set_yticks(range(-45, 46, 15))
-        self.ax_roll.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_roll.legend(loc='upper right')
-        self.ax_roll.set_xlabel('Time') # Add X label to the bottom plot of the left column
-        
-        # Yaw Difference plot (bottom-right)
-        self.ax_yaw_diff = self.fig.add_subplot(gs[2,1], sharex=self.ax_yaw)
-        self.ln_yaw_diff, = self.ax_yaw_diff.plot([], [], 'c-', lw=1.5, label='Yaw Diff') # Cyan color
-        self.ax_yaw_diff.set_ylabel('Yaw Diff (deg)')
-        self.ax_yaw_diff.set_ylim(-45, 45) # Example range, adjust as needed
-        self.ax_yaw_diff.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_yaw_diff.legend(loc='upper right')
-        self.ax_yaw_diff.set_xlabel('Time') # X label for this plot too
-        
-        # Configure time axis (applies to all plots sharing self.ax_yaw's x-axis)
-        self.ax_roll.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-        # Ensure the new ax_yaw_diff also gets the formatter if not automatically shared
-        self.ax_yaw_diff.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-        
-        # Set window title and adjust layout
+
+        # General plot settings
+        time_format = mdates.DateFormatter('%H:%M:%S')
+        if 'roll' in self.axes: # Apply to the last main telemetry plot's x-axis
+             self.axes['roll'].xaxis.set_major_formatter(time_format)
+        if 'yaw_diff' in self.axes: # Apply to yaw_diff plot's x-axis
+             self.axes['yaw_diff'].xaxis.set_major_formatter(time_format)
+
         self.fig.suptitle(f'Drone Telemetry - {datetime.now().strftime("%H:%M:%S")}', fontsize=16)
-        plt.tight_layout(rect=[0, 0, 1, 0.96]) 
-        plt.subplots_adjust(hspace=0.25, wspace=0.25) # Adjusted spacing
-        
-        # Set initial time window
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.subplots_adjust(hspace=0.25, wspace=0.25)
+
         self.end_time = datetime.now()
         self.start_time_dt = self.end_time - timedelta(seconds=self.window_size)
 
     def _start_new_log_file(self):
         """Handles the creation of a new log file for each test."""
-        if self.csv_file is not None:
+        if self.csv_file is not None and not self.csv_file.closed:
             self.csv_file.close()
 
         self.current_test_number += 1
@@ -247,11 +286,13 @@ class DroneDataPlotter:
         print(f"Starting Test {self.current_test_number}. Logging data to {self.current_log_filename}")
     
     def read_data(self):
-        """Read and parse data from the socket stream (CSV format)."""
+        """Read and parse data from the socket stream."""
         try:
+            if not hasattr(self, 'stream') or not self.stream:
+                return None
+                
             line = self.stream.readline()
             if not line:
-                # print("Connection closed or no data received.") # Less verbose
                 return None
                 
             line = line.strip()
@@ -260,81 +301,71 @@ class DroneDataPlotter:
 
             values_str = line.split(',')
             
-            if len(values_str) != 16:  # Updated to expect 16 values
-                print(f"Malformed data line: Expected 16 values, got {len(values_str)}. Line: '{line}'")
+            # The drone sends 16 values. header_info has 17 entries because of our timestamp.
+            # So we expect len(values_str) to be len(self.header_info) - 1
+            expected_value_count = len(self.header_info) -1 # Exclude our timestamp
+            if len(values_str) != expected_value_count:
+                print(f"Malformed data line: Expected {expected_value_count} values, got {len(values_str)}. Line: '{line}'")
                 return None
 
             # Log the raw data with a high-resolution timestamp
             log_timestamp = datetime.now().timestamp()
+            # The first item in self.header is 'timestamp', so log_row uses its csv_col_name.
             log_row = [log_timestamp] + values_str
             if self.csv_writer and self.test_state in ["TEST_RUNNING", "WAITING_POST_TEST"]:
-                self.csv_writer.writerow(log_row)
-                
-            try:
-                # Convert all values to float
-                vals = [float(v) for v in values_str]
-            except ValueError as e:
-                print(f"Error converting data to float: {e}. Line: '{line}'")
-                return None
+                self.csv_writer.writerow(log_row) # Use the generated self.header for column names
+
+            vals = []
+            for i, value_str in enumerate(values_str):
+                # Find the corresponding header_info entry.
+                # header_info[0] is 'Timestamp', csv_index starts from 0 for drone data.
+                # So, header_info[i+1] corresponds to values_str[i]
+                field_info = self.header_info[i+1]
+                try:
+                    vals.append(float(value_str))
+                except ValueError:
+                    print(f"Error converting value for field '{field_info['name']}': Could not convert '{value_str}' to float. Line: '{line}'")
+                    return None
 
             current_time = datetime.now()
-            
-            # Parse all 16 data fields from vals[0] to vals[16]
-            # and assign to self.last_... attributes
-            self.last_imu_roll = vals[0]
-            self.last_imu_pitch = vals[1]
-            self.last_imu_yaw = vals[2]
-            
-            self.last_ctrl_roll = vals[3]
-            self.last_ctrl_pitch = vals[4]
-            self.last_throttle = vals[5] # Used by UI
-            self.last_ctrl_yaw = vals[6]
-            
-            self.last_pitch_diff = vals[7]
-            self.last_roll_diff = vals[8]
-            self.last_current_yaw_target = vals[9]
-            self.last_yaw_diff = vals[10] # Used by Yaw Diff Plot
-            
-            self.last_v_scalar = vals[11]    # v_scalar is now vals[11]
-            
-            self.last_f_cw_scalar = vals[12] # Used by UI
-            self.last_b_cw_scalar = vals[13] # Used by UI
-            self.last_f_ccw_scalar = vals[14]# Used by UI
-            self.last_b_ccw_scalar = vals[15]# Used by UI
-
-            # Scale controller outputs for plotting visualization (using self.last_... attributes)
-            scaled_cout_roll = (self.last_ctrl_roll - 1500) / 500
-            scaled_cout_pitch = (self.last_ctrl_pitch - 1500) / 500
-            scaled_cout_yaw = (self.last_ctrl_yaw - 1500) / 500
-            scaled_cout_throttle = (self.last_throttle - 1000) / 1000.0
-
-            # Append all data to deques using self.last_... attributes
             self.timestamps.append(current_time)
-            # IMU data
-            self.roll_data.append(self.last_imu_roll)
-            self.pitch_data.append(self.last_imu_pitch)
-            self.yaw_data.append(self.last_imu_yaw)
-            # Controller data (scaled for existing plots)
-            self.ctrl_roll_data.append(scaled_cout_roll)
-            self.ctrl_pitch_data.append(scaled_cout_pitch)
-            self.ctrl_throttle_data.append(scaled_cout_throttle)
-            self.ctrl_yaw_data.append(scaled_cout_yaw)
-            # Additional data
-            self.pitch_diff_data.append(self.last_pitch_diff)
-            self.roll_diff_data.append(self.last_roll_diff)
-            self.current_yaw_target_data.append(self.last_current_yaw_target)
-            self.yaw_diff_data.append(self.last_yaw_diff)
-            self.v_scalar_data.append(self.last_v_scalar) # Appending self.last_v_scalar (from vals[12])
-            self.f_cw_scalar_data.append(self.last_f_cw_scalar)
-            self.b_cw_scalar_data.append(self.last_b_cw_scalar)
-            self.f_ccw_scalar_data.append(self.last_f_ccw_scalar)
-            self.b_ccw_scalar_data.append(self.last_b_ccw_scalar)
-            
-            # Return values for existing plotting (maintaining compatibility)
-            # Ensure these returned values are consistent with what the plot expects (e.g. raw vs scaled)
-            return (current_time, self.last_imu_yaw, self.last_imu_pitch, self.last_imu_roll,
-                   scaled_cout_roll, scaled_cout_pitch, 
-                   scaled_cout_throttle, scaled_cout_yaw)
+
+            # Iterate through header_info to populate latest_values and deques
+            # This loop structure is okay, as it uses csv_index to pick from `vals`
+            for info in self.header_info:
+                if info['csv_index'] is None: # Skip timestamp, already handled
+                    continue
+
+                # `vals` now contains successfully converted floats, in the same order as values_str
+                raw_value = vals[info['csv_index']]
+
+                # Update latest_values
+                if info['latest_val_key']:
+                    self.latest_values[info['latest_val_key']] = raw_value
+
+                # Append to appropriate deque
+                if info['data_category'] and info['data_key']:
+                    data_deque_category = getattr(self, info['data_category']) # e.g., self.imu_data
+
+                    # Special scaling for controller data for plotting compatibility
+                    if info['data_category'] == 'ctrl_data':
+                        if info['data_key'] == 'throttle':
+                            scaled_value = (raw_value - 1000) / 1000.0
+                        else: # roll, pitch, yaw
+                            scaled_value = (raw_value - 1500) / 500.0
+                        data_deque_category[info['data_key']].append(scaled_value)
+                    else:
+                        data_deque_category[info['data_key']].append(raw_value)
+
+            # Return values for existing plotting (maintaining compatibility for now)
+            # These are: current_time, yaw, pitch, roll, scaled_ctrl_roll, scaled_ctrl_pitch, scaled_ctrl_throttle, scaled_ctrl_yaw
+            # Access them from the newly populated latest_values or scaled deques
+            return (current_time,
+                    self.latest_values['imu_yaw'], self.latest_values['imu_pitch'], self.latest_values['imu_roll'],
+                    self.ctrl_data['roll'][-1],    # Last appended scaled value
+                    self.ctrl_data['pitch'][-1],   # Last appended scaled value
+                    self.ctrl_data['throttle'][-1],# Last appended scaled value
+                    self.ctrl_data['yaw'][-1])     # Last appended scaled value
                     
         except Exception as e:
             print(f"Error in read_data: {e}")
@@ -345,80 +376,83 @@ class DroneDataPlotter:
     def update_plot(self, frame):
         """Update the plot with new data."""
         # Check if figure is still valid
-        if not plt.fignum_exists(self.fig.number):
-            self.ani.event_source.stop()
+        if not hasattr(self, 'fig') or not plt.fignum_exists(self.fig.number):
+            if hasattr(self, 'ani') and hasattr(self.ani, 'event_source'):
+                self.ani.event_source.stop()
             return []
             
         try:
             new_data = self.read_data() # Fetch new data
             perform_plot_update = False
 
-            # State: IDLE
+            # ----- State Machine -----
+            # State: IDLE - Waiting for a test to start
             if self.test_state == "IDLE":
-                if new_data is not None and self.last_throttle > self.throttle_deadzone_threshold:
+                # Transition to TEST_RUNNING if throttle goes above threshold
+                if new_data is not None and self.latest_values['throttle'] > self.throttle_deadzone_threshold:
                     self.test_state = "TEST_RUNNING"
-                    self._start_new_log_file() # This also increments test_number
+                    self._start_new_log_file() # Initialize new log for this test
                     self.last_state_transition_time = time.time()
-                    # Optional: Clear deques for a fresh plot for the new test
-                    for data_deque in [self.timestamps, self.yaw_data, self.pitch_data, self.roll_data,
-                                       self.ctrl_roll_data, self.ctrl_pitch_data, self.ctrl_throttle_data, self.ctrl_yaw_data,
-                                       self.pitch_diff_data, self.roll_diff_data, self.current_yaw_target_data, self.yaw_diff_data,
-                                       self.data_field_11_data, self.v_scalar_data,
-                                       self.f_cw_scalar_data, self.b_cw_scalar_data, self.f_ccw_scalar_data, self.b_ccw_scalar_data]:
-                        data_deque.clear()
-                    perform_plot_update = True # Start plotting active test data
-                else:
-                    # In IDLE and no test starting, do minimal work.
-                    # Title updated before returning artists
-                    pass # Minimal work if just idling
 
-            # State: TEST_RUNNING
+                    # Clear previous test data from deques for a fresh plot
+                    self.timestamps.clear()
+                    for category_dict in [self.imu_data, self.ctrl_data, self.derived_data, self.motor_scalar_data]:
+                        for data_deque in category_dict.values():
+                            data_deque.clear()
+                    perform_plot_update = True # Start plotting the new test data
+                else:
+                    # Still IDLE, minimal work. Plot title might be updated at the end.
+                    pass
+
+            # State: TEST_RUNNING - Actively logging and plotting test data
             elif self.test_state == "TEST_RUNNING":
-                # Title updated before returning artists
-                if new_data is not None: # Data was read and processed by read_data
+                if new_data is not None:
                     perform_plot_update = True
-                    if self.last_throttle < self.throttle_deadzone_threshold:
+                    # Transition to WAITING_POST_TEST if throttle drops below threshold
+                    if self.latest_values['throttle'] < self.throttle_deadzone_threshold:
                         self.test_state = "WAITING_POST_TEST"
                         self.last_state_transition_time = time.time()
                 else:
-                    # Potentially handle case where data read failed during a test
+                    # Data read failed during a test, potentially log this or handle
                     pass
 
-            # State: WAITING_POST_TEST
+            # State: WAITING_POST_TEST - Throttle has dropped, waiting for test to fully end or resume
             elif self.test_state == "WAITING_POST_TEST":
-                # Title updated before returning artists
-                if new_data is not None: # Data was read
-                    perform_plot_update = True
+                if new_data is not None:
+                    perform_plot_update = True # Continue plotting data during this phase
 
-                if self.last_throttle > self.throttle_deadzone_threshold: # Test resumed
+                # Transition back to TEST_RUNNING if throttle goes up again (test resumes)
+                if self.latest_values['throttle'] > self.throttle_deadzone_threshold:
                     self.test_state = "TEST_RUNNING"
                     self.last_state_transition_time = time.time()
+                # Transition to IDLE if post-test duration has elapsed
                 elif time.time() - self.last_state_transition_time > self.post_test_wait_duration:
                     self.test_state = "IDLE"
                     self.last_state_transition_time = time.time()
-                    print(f"Test {self.current_test_number} complete.")
-                    # Log file is already written. Next test will start a new one.
+                    print(f"Test {self.current_test_number} complete. Log file: {self.current_log_filename}")
+                    # CSV log file is already being written to; it will be closed on cleanup or when a new test starts.
 
-            # Actual Plotting Logic (conditional)
+            # ----- Actual Plotting Logic -----
             if perform_plot_update and len(self.timestamps) > 1:
                 current_time = self.timestamps[-1]
                 start_time = current_time - timedelta(seconds=self.window_size)
 
-                # Update plot data - IMU
-                self.ln_yaw.set_data(self.timestamps, self.yaw_data)
-                self.ln_pitch.set_data(self.timestamps, self.pitch_data)
-                self.ln_roll.set_data(self.timestamps, self.roll_data)
+                # Update plot data using self.lines and self.axes
+                self.lines['yaw_imu'].set_data(self.timestamps, self.imu_data['yaw'])
+                self.lines['pitch_imu'].set_data(self.timestamps, self.imu_data['pitch'])
+                self.lines['roll_imu'].set_data(self.timestamps, self.imu_data['roll'])
 
-                # Update plot data - Controller
-                self.ln_yaw_ctrl.set_data(self.timestamps, self.ctrl_yaw_data)
-                self.ln_pitch_ctrl.set_data(self.timestamps, self.ctrl_pitch_data)
-                self.ln_roll_ctrl.set_data(self.timestamps, self.ctrl_roll_data)
+                self.lines['yaw_ctrl'].set_data(self.timestamps, self.ctrl_data['yaw'])
+                self.lines['pitch_ctrl'].set_data(self.timestamps, self.ctrl_data['pitch'])
+                self.lines['roll_ctrl'].set_data(self.timestamps, self.ctrl_data['roll'])
 
-                # Update Yaw Difference plot
-                self.ln_yaw_diff.set_data(self.timestamps, self.yaw_diff_data)
+                if 'yaw_diff_line' in self.lines:
+                    self.lines['yaw_diff_line'].set_data(self.timestamps, self.derived_data['yaw_diff'])
 
-                for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll]: # ax_yaw_diff is implicitly handled by sharex=ax_yaw
-                    ax.set_xlim(start_time, current_time)
+                # Update x-axis limits for relevant axes
+                for ax_key in ['yaw', 'pitch', 'roll', 'yaw_diff']: # yaw_diff shares x-axis with yaw
+                    if ax_key in self.axes:
+                        self.axes[ax_key].set_xlim(start_time, current_time)
 
                 # Update Drone UI
                 def get_color(value, min_val, max_val, start_color_rgb=(0.85, 0.85, 0.95), end_color_rgb=(0.1, 0.1, 0.6)):
@@ -427,15 +461,16 @@ class DroneDataPlotter:
                     color = [start_color_rgb[i] + (end_color_rgb[i] - start_color_rgb[i]) * norm_value for i in range(3)]
                     return tuple(color)
 
-                throttle_value = self.last_throttle
+                throttle_value = self.latest_values['throttle']
                 self.throttle_display_shape.set_color(get_color(throttle_value, 1000, 2000))
                 self.throttle_display_text.set_text(f'Throttle:\n{int(throttle_value)}')
 
+                # Motor keys in motor_config_update should match keys in latest_values for scalars
                 motor_config_update = {
-                    'f_ccw': {'label': 'F_CCW', 'value': self.last_f_ccw_scalar},
-                    'f_cw':  {'label': 'F_CW',  'value': self.last_f_cw_scalar},
-                    'b_ccw': {'label': 'B_CCW', 'value': self.last_b_ccw_scalar},
-                    'b_cw':  {'label': 'B_CW',  'value': self.last_b_cw_scalar}
+                    'f_ccw': {'label': 'F_CCW', 'value': self.latest_values['f_ccw_scalar']},
+                    'f_cw':  {'label': 'F_CW',  'value': self.latest_values['f_cw_scalar']},
+                    'b_ccw': {'label': 'B_CCW', 'value': self.latest_values['b_ccw_scalar']},
+                    'b_cw':  {'label': 'B_CW',  'value': self.latest_values['b_cw_scalar']}
                 }
                 for key, data in motor_config_update.items():
                     self.motor_display_shapes[key].set_color(get_color(data['value'], 0.0, 1.0))
@@ -458,57 +493,53 @@ class DroneDataPlotter:
             traceback.print_exc()
 
         # Return all artists that need to be redrawn for blitting
-        artists = [self.ln_yaw, self.ln_pitch, self.ln_roll, 
-                   self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
-                   self.throttle_display_shape, self.throttle_display_text,
-                   self.ln_yaw_diff] # Added Yaw Diff line
+        # Collect all line objects from self.lines
+        artists = list(self.lines.values())
+        # Add UI elements
+        artists.append(self.throttle_display_shape)
+        artists.append(self.throttle_display_text)
         artists.extend(self.motor_display_shapes.values())
         artists.extend(self.motor_display_texts.values())
+
         if self.fig._suptitle is not None:
             artists.append(self.fig._suptitle)
-        return artists
+
+        # Filter out any None values just in case, though all should be initialized
+        return [a for a in artists if a is not None]
     
     def init_plot(self):
         """Initialize the plot with empty data and prepare UI elements."""
-        # Check if figure is still valid
-        if not hasattr(self, 'fig') or not plt.fignum_exists(self.fig.number):
+        if not hasattr(self, 'fig') or not plt.fignum_exists(self.fig.number) or not self.lines:
+            # If fig or lines aren't set up (e.g. setup_plot wasn't called or failed), return empty
             return []
             
         try:
-            # IMU data lines
-            self.ln_yaw.set_data([], [])
-            self.ln_pitch.set_data([], [])
-            self.ln_roll.set_data([], [])
-            
-            # Controller data lines
-            self.ln_yaw_ctrl.set_data([], [])
-            self.ln_pitch_ctrl.set_data([], [])
-            self.ln_roll_ctrl.set_data([], [])
-            
-            # Yaw Difference line
-            if self.ln_yaw_diff: # Check if it's initialized
-                self.ln_yaw_diff.set_data([], [])
+            # Set empty data for all lines stored in self.lines
+            for line_key in self.lines:
+                self.lines[line_key].set_data([], [])
 
-            self.fig.suptitle(f'Drone Telemetry - Waiting for Test #1 - {datetime.now().strftime("%H:%M:%S")}')
+            if hasattr(self, 'fig') and self.fig: # Ensure fig exists before setting suptitle
+                 self.fig.suptitle(f'Drone Telemetry - Waiting for Test #1 - {datetime.now().strftime("%H:%M:%S")}')
             
             # Initial state for UI elements is set in setup_plot.
             # For blitting, all animated artists must be returned by init_func.
-            artists = [self.ln_yaw, self.ln_pitch, self.ln_roll,
-                     self.ln_yaw_ctrl, self.ln_pitch_ctrl, self.ln_roll_ctrl,
-                     self.throttle_display_shape, self.throttle_display_text]
+            artists = list(self.lines.values()) # All plot lines
             
-            if self.ln_yaw_diff:
-                artists.append(self.ln_yaw_diff)
-                
-            artists.extend(self.motor_display_shapes.values())
-            artists.extend(self.motor_display_texts.values())
+            # Add UI elements if they exist
+            if hasattr(self, 'throttle_display_shape') and self.throttle_display_shape:
+                artists.append(self.throttle_display_shape)
+            if hasattr(self, 'throttle_display_text') and self.throttle_display_text:
+                artists.append(self.throttle_display_text)
+
+            if hasattr(self, 'motor_display_shapes'):
+                artists.extend(self.motor_display_shapes.values())
+            if hasattr(self, 'motor_display_texts'):
+                artists.extend(self.motor_display_texts.values())
             
-            if hasattr(self.fig, '_suptitle') and self.fig._suptitle is not None:
+            if hasattr(self, 'fig') and self.fig and self.fig._suptitle is not None:
                 artists.append(self.fig._suptitle)
                 
-            # Filter out any None values that might have snuck in
-            artists = [a for a in artists if a is not None]
-            return artists
+            return [a for a in artists if a is not None] # Filter Nones
             
         except Exception as e:
             print(f"Error in init_plot: {e}")
@@ -529,26 +560,36 @@ class DroneDataPlotter:
             self.setup_plot()
             
             # Set up the animation with a reference to keep it alive
-            self.ani = FuncAnimation(
-                self.fig, 
-                self.update_plot,
-                init_func=self.init_plot,
-                interval=self.update_interval,
-                blit=True,  # Enable blitting for better performance
-                cache_frame_data=False
-            )
-            
-            # Show the plot and block until the window is closed
-            plt.tight_layout()
-            plt.show(block=True)
-            
+            try:
+                self.ani = FuncAnimation(
+                    self.fig, 
+                    self.update_plot,
+                    init_func=self.init_plot,
+                    interval=self.update_interval,
+                    blit=True,  # Enable blitting for better performance
+                    cache_frame_data=False
+                )
+                
+                # Show the plot and block until the window is closed
+                plt.tight_layout()
+                plt.show(block=True)
+                
+            except Exception as e:
+                print(f"Error in animation: {e}")
+                raise
+                
         except KeyboardInterrupt:
             print("\nShutdown requested...")
         except Exception as e:
             print(f"An error occurred: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.cleanup()
-            plt.close('all')  # Ensure all plots are closed
+            try:
+                plt.close('all')  # Ensure all plots are closed
+            except:
+                pass
     
     def cleanup(self):
         """Clean up resources."""
@@ -561,7 +602,7 @@ class DroneDataPlotter:
         # Close CSV file
         if hasattr(self, 'csv_file') and self.csv_file and not self.csv_file.closed:
             self.csv_file.close()
-            if self.current_log_filename: # Check if a log file was actually created
+            if hasattr(self, 'current_log_filename') and self.current_log_filename: # Check if a log file was actually created
                 print(f"Data logged to {self.current_log_filename}")
             else:
                 print("No active log file to save at cleanup.")
@@ -570,8 +611,8 @@ class DroneDataPlotter:
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Plot drone yaw data in real-time.')
-    parser.add_argument('--host', type=str, default='192.168.76.215',
-                       help='IP address of the drone (default: 192.168.76.215)')
+    parser.add_argument('--host', type=str, required=True,
+                       help='IP address of the drone (required)')
     parser.add_argument('--port', type=int, default=23,
                        help='Port number (default: 23)')
     parser.add_argument('--window', type=int, default=10,
@@ -591,12 +632,7 @@ def main():
     print(f"  Update Interval: {args.interval} ms")
     print("-" * 40)
     
-    plotter = DroneDataPlotter(
-        host=args.host,
-        port=args.port,
-        window_size=args.window,
-        update_interval=args.interval
-    )
+    plotter = DroneDataPlotter()
     
     try:
         plotter.run()
