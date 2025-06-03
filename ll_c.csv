@@ -1,4 +1,4 @@
-timestamp,imu_roll,imu_pitch,imu_yaw,ctrl_roll,ctrl_pitch,ctrl_throttle,ctrl_yaw,current_yaw_target,data_field_11,v_scalar,f_cw_scalar,b_cw_scalar,f_ccw_scalar,b_ccw_scalar
+timestamp,imu_roll,imu_pitch,imu_yaw,ctrl_roll,ctrl_pitch,ctrl_throttle,ctrl_yaw,current_yaw_target,v_scalar,f_cw_scalar,b_cw_scalar,f_ccw_scalar,b_ccw_scalar
 1748643476.390423,0.0,-0.06,0.06,1502,1504,1092,1503,0.0,0.08,0.99,1.0,0.97,0.99,
 1748643476.426315,0.0,-0.06,0.06,1500,1500,1132,1501,0.0,0.13,0.99,1.0,0.97,0.99,
 1748643476.648375,0.0,-0.06,0.06,1499,1500,1132,1500,0.0,0.13,0.99,1.0,0.97,0.99,

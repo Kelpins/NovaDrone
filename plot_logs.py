@@ -41,10 +41,11 @@ class LogDataPlotter:
                         self.data_queues[header] = deque(maxlen=self.max_data_points)
 
                 scaling_params = {
-                    'ctrl_roll': (1500, 500),
-                    'ctrl_pitch': (1500, 500),
-                    'ctrl_yaw': (1500, 500),
-                    'ctrl_throttle': (1000, 1000.0) # Ensure float division for throttle
+                    'ctrl_roll': (1500, 500),      # (value - 1500) / 500
+                    'ctrl_pitch': (1500, 500),     # (value - 1500) / 500
+                    'ctrl_yaw': (1500, 500),       # (value - 1500) / 500
+                    'ctrl_throttle': (1000, 1000),  # (value - 1000) / 1000 -> 0.0 to 1.0 for 1000-2000 range
+                    'current_yaw_target': (0, 1)    # Already in degrees, no scaling needed
                 }
                 
                 for row_idx, row in enumerate(reader):
@@ -127,7 +128,7 @@ class LogDataPlotter:
         
         # Create figure with multiple subplots
         self.fig = plt.figure()
-        gs = gridspec.GridSpec(6, 2, height_ratios=[1, 1, 1, 1, 1, 1], width_ratios=[1, 1])
+        gs = gridspec.GridSpec(4, 2, height_ratios=[1, 1, 1, 1], width_ratios=[1, 1])
         
         # Define base axes, these might not all be used if data is missing
         # We will create them but only configure them if they get plots
@@ -137,12 +138,8 @@ class LogDataPlotter:
         ax_throttle_candidate = self.fig.add_subplot(gs[3, 0], sharex=ax_yaw_candidate)
         ax_diff_candidate = self.fig.add_subplot(gs[0:2, 1], sharex=ax_yaw_candidate)
         ax_motors_candidate = self.fig.add_subplot(gs[2:4, 1], sharex=ax_yaw_candidate)
-        
-        # Scatter plots for controller vs IMU (right column, bottom) - leaving as is for now
-        self.ax_scatter = self.fig.add_subplot(gs[4:6, :])
 
         # Store all candidate axes to manage them later (e.g., for deletion if unused)
-        # ax_scatter is handled separately and always created.
         self.candidate_axes_map = {
             'ax_yaw': ax_yaw_candidate, 'ax_pitch': ax_pitch_candidate,
             'ax_roll': ax_roll_candidate, 'ax_throttle': ax_throttle_candidate,
@@ -254,71 +251,52 @@ class LogDataPlotter:
         # plt.subplots_adjust(hspace=0.5, wspace=0.3) # May not be needed if tight_layout is effective
         
         # Set window title
-        if self.fig: # Ensure fig exists
+        if self.fig:  # Ensure fig exists
             self.fig.suptitle(f'Drone Log Data - {os.path.basename(self.log_file_path)} - {datetime.now().strftime("%H:%M:%S")}')
-        # plt.subplots_adjust(hspace=0.25) # May not be needed
+        
+        # Adjust layout to use the space previously used by the scatter plot
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
     
-    def update_plot(self):
-        """Update the plot with the parsed data."""
-        if not self.timestamps or not self.plot_lines: # if no timestamps or no lines were set up
+    def plot_data(self):
+        """Plot the data on the initialized axes."""
+        if not self.timestamps or not self.plot_lines:
             return []
         
         # Convert timestamps to relative seconds
-        # Ensure start_time is not None (it should be set in parse_log_file)
-        current_start_time = self.start_time if self.start_time is not None else (self.timestamps[0] if self.timestamps else 0)
+        current_start_time = self.start_time if self.start_time is not None else self.timestamps[0]
         timestamps_rel = [t - current_start_time for t in self.timestamps]
         
-        # Update all registered plot lines
+        # Update all plot lines
         for key, line_artist in self.plot_lines.items():
-            if key in self.data_queues and len(self.data_queues[key]) > 0:
-                # Ensure data queue and timestamps have compatible lengths for plotting
-                # This is mostly a concern if parsing allows partial appends,
-                # but our current parsing appends one by one with timestamps.
-                # However, timestamps deque might be longer than a specific data_queue if there were parsing errors for that key.
-                # So, we plot only up to the minimum length available for that specific key.
-
-                # We need to align data with the main timestamps.
-                # This assumes data_queues[key] corresponds to the *entire* duration of timestamps,
-                # with missing values not added.
-                # A more robust way would be to store (timestamp, value) pairs in data_queues,
-                # but current setup has separate deques.
-                # For now, we assume that if data_queues[key] has N points, they correspond to the latest N timestamps.
-                # This is generally true if maxlen is the same and no parsing errors lead to skipped appends for a key.
-
-                data_to_plot = list(self.data_queues[key])
-                timestamps_for_plot = timestamps_rel
-                # The NaN padding in parse_log_file should ensure len(data_to_plot) == len(timestamps_rel).
-                # If not, set_data might raise an error, highlighting an issue in parsing logic.
-
-                if timestamps_for_plot and data_to_plot: # Ensure both are non-empty
-                    line_artist.set_data(timestamps_for_plot, data_to_plot)
-
-        # Set x-axis limits based on window size for active axes
-        if timestamps_rel:
-            current_max_time = timestamps_rel[-1]
-            x_min = max(0, current_max_time - self.window_size)
-            x_max = max(self.window_size, current_max_time + 1) # Add a little buffer
-            
-            for ax in self.active_axes: # Only update active axes
-                ax.set_xlim(x_min, x_max)
-
-                # Auto-scale y-axes for these plots
-                # (Throttle and Motors have fixed Y unless we change it)
-                # self.ax_throttle and self.ax_motors (if they exist) have predefined Y limits or styles
-                # that might not be suitable for general autoscaling.
-                if hasattr(self, 'ax_throttle') and ax == self.ax_throttle:
-                    pass # Typically fixed Y-axis for throttle
-                elif hasattr(self, 'ax_motors') and ax == self.ax_motors:
-                    pass # Typically fixed Y-axis for motors
-                else: # For other plots like yaw, pitch, roll, diff
-                    ax.relim()
-                    ax.autoscale_view(tight=False, scalex=False, scaley=True) # Autoscale Y, keep X fixed by xlim
-
-        # Collect all artists to return
-        # Only return artists that are part of self.plot_lines
-        artists = list(self.plot_lines.values())
+            if key in self.data_queues and self.data_queues[key]:
+                data = list(self.data_queues[key])
+                min_len = min(len(timestamps_rel), len(data))
+                if min_len > 0:
+                    valid_data = [v for v in data[:min_len] if not np.isnan(v)]
+                    if valid_data:
+                        if key == 'ctrl_throttle':
+                            print(f"Plotting {key} data: min={min(valid_data):.2f}, max={max(valid_data):.2f}, count={len(valid_data)}")
+                        line_artist.set_data(timestamps_rel[:min_len], data[:min_len])
         
-        return artists
+        # Set axis limits
+        if timestamps_rel:
+            x_max = max(timestamps_rel) * 1.05
+            
+            for ax in self.active_axes:
+                ax.set_xlim(0, x_max)
+                
+                if hasattr(self, 'ax_yaw') and ax == self.ax_yaw:
+                    ax.set_ylim(-180, 180)
+                elif hasattr(self, 'ax_pitch') and ax == self.ax_pitch:
+                    ax.set_ylim(-20, 20)
+                elif hasattr(self, 'ax_roll') and ax == self.ax_roll:
+                    ax.set_ylim(-20, 20)
+                elif hasattr(self, 'ax_throttle') and ax == self.ax_throttle:
+                    ax.set_ylim(0, 1)
+                elif hasattr(self, 'ax_motors') and ax == self.ax_motors:
+                    ax.set_ylim(0, 1.1)
+        
+        return list(self.plot_lines.values())
 
 def main():
     import argparse
@@ -336,12 +314,20 @@ def main():
     plotter = LogDataPlotter(args.log_file, args.window)
     
     if plotter.parse_log_file():
-        plotter.setup_plot() # Call setup_plot after parsing data
-        plotter.update_plot() # Initial update
+        print("Successfully parsed log file")
+        print(f"Found data for: {list(plotter.data_queues.keys())}")
+        
+        plotter.setup_plot()  # Initialize the figure and axes
+        print("Plot setup complete")
+        
+        plotter.plot_data()  # Plot the data
+        print("Data plotted")
+        
+        plt.tight_layout()  # Adjust layout to prevent overlap
         plt.show()
     else:
-        print("Error: Failed to parse log file.", file=sys.stderr) # Print to stderr
-        sys.exit(1) # Exit with status 1
+        print("Error: Failed to parse log file.", file=sys.stderr)
+        sys.exit(1)  # Exit with status 1
 
 if __name__ == "__main__":
     main()
