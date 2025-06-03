@@ -33,11 +33,6 @@ class LogDataPlotter:
         self.ctrl_throttle_data = deque(maxlen=self.max_data_points)
         self.ctrl_yaw_data = deque(maxlen=self.max_data_points)
         
-        # Difference data
-        self.pitch_diff_data = deque(maxlen=self.max_data_points)
-        self.roll_diff_data = deque(maxlen=self.max_data_points)
-        self.yaw_diff_data = deque(maxlen=self.max_data_points)
-        
         # Motor scalar data
         self.v_scalar_data = deque(maxlen=self.max_data_points)
         self.f_cw_scalar_data = deque(maxlen=self.max_data_points)
@@ -78,8 +73,6 @@ class LogDataPlotter:
                         if len(row) > 8:
                             pitch_diff = float(row[8])
                             roll_diff = float(row[9])
-                            current_yaw_target = float(row[10]) if len(row) > 10 else 0
-                            yaw_diff = float(row[11]) if len(row) > 11 else 0
                             
                             # Extract motor scalar data (remaining values)
                             v_scalar = float(row[12]) if len(row) > 12 else 0
@@ -111,7 +104,6 @@ class LogDataPlotter:
                         if len(row) > 8:
                             self.pitch_diff_data.append(pitch_diff)
                             self.roll_diff_data.append(roll_diff)
-                            self.yaw_diff_data.append(yaw_diff)
                             
                             # Motor scalar data
                             self.v_scalar_data.append(v_scalar)
@@ -202,15 +194,6 @@ class LogDataPlotter:
         self.ax_throttle.set_xlabel('Time (s)')
         self.ax_throttle.legend(loc='upper right', fontsize=8)
         
-        # Difference plot
-        self.ln_pitch_diff, = self.ax_diff.plot([], [], 'g-', lw=1, alpha=0.7, label='Pitch Diff')
-        self.ln_roll_diff, = self.ax_diff.plot([], [], 'r-', lw=1, alpha=0.7, label='Roll Diff')
-        self.ln_yaw_diff, = self.ax_diff.plot([], [], 'b-', lw=1, alpha=0.7, label='Yaw Diff')
-        self.ax_diff.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_diff.set_title('Orientation Differences (IMU - Target)')
-        self.ax_diff.set_ylabel('Difference (deg)')
-        self.ax_diff.legend(loc='upper right', fontsize=8)
-        
         # Motor scalars plot
         self.ln_v_scalar, = self.ax_motors.plot([], [], 'k-', lw=1, label='V Scalar')
         self.ln_f_cw, = self.ax_motors.plot([], [], 'b-', lw=1, label='Front CW')
@@ -221,18 +204,6 @@ class LogDataPlotter:
         self.ax_motors.set_ylabel('Scalar Value')
         self.ax_motors.set_ylim(0, 1.1)
         self.ax_motors.legend(loc='upper right', fontsize=7, ncol=2)
-        
-        # Scatter plot for controller vs IMU
-        self.scatter_roll = self.ax_scatter.scatter([], [], s=10, alpha=0.3, c='r', label='Roll')
-        self.scatter_pitch = self.ax_scatter.scatter([], [], s=10, alpha=0.3, c='g', label='Pitch')
-        self.scatter_yaw = self.ax_scatter.scatter([], [], s=10, alpha=0.3, c='b', label='Yaw')
-        self.ax_scatter.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_scatter.axvline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_scatter.set_title('Controller Output vs IMU')
-        self.ax_scatter.set_xlabel('IMU Value (deg)')
-        self.ax_scatter.set_ylabel('Controller Output')
-        self.ax_scatter.legend(loc='best', fontsize=8)
-        self.ax_scatter.grid(True, alpha=0.3)
         
         # Adjust layout
         plt.tight_layout()
@@ -260,11 +231,6 @@ class LogDataPlotter:
         self.ln_roll_ctrl.set_data(timestamps, self.ctrl_roll_data)
         self.ln_throttle.set_data(timestamps, self.ctrl_throttle_data)
         
-        # Update difference plots
-        self.ln_pitch_diff.set_data(timestamps, self.pitch_diff_data)
-        self.ln_roll_diff.set_data(timestamps, self.roll_diff_data)
-        self.ln_yaw_diff.set_data(timestamps, self.yaw_diff_data)
-        
         # Update motor scalar plots
         self.ln_v_scalar.set_data(timestamps, self.v_scalar_data)
         self.ln_f_cw.set_data(timestamps, self.f_cw_scalar_data)
@@ -272,21 +238,6 @@ class LogDataPlotter:
         self.ln_f_ccw.set_data(timestamps, self.f_ccw_scalar_data)
         self.ln_b_ccw.set_data(timestamps, self.b_ccw_scalar_data)
         
-        # Update scatter plot data
-        if len(timestamps) > 0:
-            self.scatter_roll.set_offsets(np.column_stack((self.roll_data, self.ctrl_roll_data)))
-            self.scatter_pitch.set_offsets(np.column_stack((self.pitch_data, self.ctrl_pitch_data)))
-            self.scatter_yaw.set_offsets(np.column_stack((self.yaw_data, self.ctrl_yaw_data)))
-            
-            # Auto-scale scatter plot
-            all_imu = np.concatenate([self.roll_data, self.pitch_data, self.yaw_data])
-            all_ctrl = np.concatenate([self.ctrl_roll_data, self.ctrl_pitch_data, self.ctrl_yaw_data])
-            if len(all_imu) > 0 and len(all_ctrl) > 0:
-                min_val = min(np.min(all_imu), np.min(all_ctrl))
-                max_val = max(np.max(all_imu), np.max(all_ctrl))
-                pad = (max_val - min_val) * 0.1
-                self.ax_scatter.set_xlim(min_val - pad, max_val + pad)
-                self.ax_scatter.set_ylim(min_val - pad, max_val + pad)
         
         # Set x-axis limits based on window size
         if timestamps:
@@ -309,15 +260,14 @@ class LogDataPlotter:
             self.ln_pitch, self.ln_pitch_ctrl,
             self.ln_roll, self.ln_roll_ctrl,
             self.ln_throttle,
-            self.ln_pitch_diff, self.ln_roll_diff, self.ln_yaw_diff,
             self.ln_v_scalar, self.ln_f_cw, self.ln_b_cw, self.ln_f_ccw, self.ln_b_ccw,
-            self.scatter_roll, self.scatter_pitch, self.scatter_yaw
         ]
         
         return artists
 
 def main():
     import argparse
+    import os
     
     parser = argparse.ArgumentParser(description='Plot drone data from log file')
     parser.add_argument('log_file', help='Path to the log file')

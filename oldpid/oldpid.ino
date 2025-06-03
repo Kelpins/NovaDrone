@@ -494,10 +494,6 @@ void updateStates() {
                         String(cout_pitch) + "," +
                         String(cout_throttle) + "," +
                         String(cout_yaw) + "," +
-                        String(pitch_diff) + "," +
-                        String(roll_diff) + "," +
-                        String(current_yaw_target) + "," +
-                        String(yaw_diff) + "," +
                         String(v_scalar) + "," +
                         String(f_cw_scalar) + "," +
                         String(b_cw_scalar) + "," +

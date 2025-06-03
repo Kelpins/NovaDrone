@@ -12,19 +12,17 @@ from datetime import datetime, timedelta
 from collections import deque
 
 class DroneDataPlotter:
-    def __init__(self, host="192.168.76.215", port=23, window_size=30, update_interval=200):  # Default to 5Hz (200ms)
+    def __init__(self, host="192.168.76.215", port=23, update_interval=250):  # Default to 5Hz (200ms)
         """
         Initialize the DroneDataPlotter.
         
         Args:
             host (str): IP address of the drone
             port (int): Port number for the telnet connection
-            window_size (int): Time window to display in seconds
-            update_interval (int): Plot update interval in milliseconds (default: 200ms for 5Hz)
+            update_interval (int): Update interval in milliseconds (default: 250ms for 4Hz)
         """
         self.host = host
         self.port = port
-        self.window_size = window_size
         self.update_interval = update_interval
         self.max_data_points = 10000  # Maximum number of data points to keep in memory
         
@@ -41,13 +39,6 @@ class DroneDataPlotter:
             'pitch': deque(maxlen=self.max_data_points),
             'throttle': deque(maxlen=self.max_data_points),
             'yaw': deque(maxlen=self.max_data_points),
-        }
-        self.derived_data = {
-            'pitch_diff': deque(maxlen=self.max_data_points),
-            'roll_diff': deque(maxlen=self.max_data_points),
-            'current_yaw_target': deque(maxlen=self.max_data_points),
-            'yaw_diff': deque(maxlen=self.max_data_points),
-            'data_field_11': deque(maxlen=self.max_data_points), # Placeholder for vals[11]
         }
         self.motor_scalar_data = {
             'v': deque(maxlen=self.max_data_points),      # vals[12]
@@ -66,11 +57,6 @@ class DroneDataPlotter:
             'ctrl_pitch': 0.0,
             'throttle': 1000.0, # Default throttle, matches old self.last_throttle
             'ctrl_yaw': 0.0,
-            'pitch_diff': 0.0,
-            'roll_diff': 0.0,
-            'current_yaw_target': 0.0,
-            'yaw_diff': 0.0,
-            'data_field_11': 0.0, # Placeholder for vals[11]
             'v_scalar': 0.0,
             'f_cw_scalar': 0.0,
             'b_cw_scalar': 0.0,
@@ -117,12 +103,8 @@ class DroneDataPlotter:
             {'name': 'Ctrl Pitch', 'csv_col_name': 'ctrl_pitch', 'data_category': 'ctrl_data', 'data_key': 'pitch', 'latest_val_key': 'ctrl_pitch', 'csv_index': 4},
             {'name': 'Ctrl Throttle', 'csv_col_name': 'ctrl_throttle', 'data_category': 'ctrl_data', 'data_key': 'throttle', 'latest_val_key': 'throttle', 'csv_index': 5},
             {'name': 'Ctrl Yaw', 'csv_col_name': 'ctrl_yaw', 'data_category': 'ctrl_data', 'data_key': 'yaw', 'latest_val_key': 'ctrl_yaw', 'csv_index': 6},
-            {'name': 'Pitch Diff', 'csv_col_name': 'pitch_diff', 'data_category': 'derived_data', 'data_key': 'pitch_diff', 'latest_val_key': 'pitch_diff', 'csv_index': 7},
-            {'name': 'Roll Diff', 'csv_col_name': 'roll_diff', 'data_category': 'derived_data', 'data_key': 'roll_diff', 'latest_val_key': 'roll_diff', 'csv_index': 8},
-            {'name': 'Current Yaw Target', 'csv_col_name': 'current_yaw_target', 'data_category': 'derived_data', 'data_key': 'current_yaw_target', 'latest_val_key': 'current_yaw_target', 'csv_index': 9},
-            {'name': 'Yaw Diff', 'csv_col_name': 'yaw_diff', 'data_category': 'derived_data', 'data_key': 'yaw_diff', 'latest_val_key': 'yaw_diff', 'csv_index': 10},
-            {'name': 'V Scalar', 'csv_col_name': 'v_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'v', 'latest_val_key': 'v_scalar', 'csv_index': 11},
-            {'name': 'F CW Scalar', 'csv_col_name': 'f_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_cw', 'latest_val_key': 'f_cw_scalar', 'csv_index': 12},
+            {'name': 'V Scalar', 'csv_col_name': 'v_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'v', 'latest_val_key': 'v_scalar', 'csv_index': 7},
+            {'name': 'F CW Scalar', 'csv_col_name': 'f_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_cw', 'latest_val_key': 'f_cw_scalar', 'csv_index': 8},
             {'name': 'B CW Scalar', 'csv_col_name': 'b_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_cw', 'latest_val_key': 'b_cw_scalar', 'csv_index': 13},
             {'name': 'F CCW Scalar', 'csv_col_name': 'f_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_ccw', 'latest_val_key': 'f_ccw_scalar', 'csv_index': 14},
             {'name': 'B CCW Scalar', 'csv_col_name': 'b_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_ccw', 'latest_val_key': 'b_ccw_scalar', 'csv_index': 15},
@@ -301,9 +283,9 @@ class DroneDataPlotter:
 
             values_str = line.split(',')
             
-            # The drone sends 16 values. header_info has 17 entries because of our timestamp.
-            # So we expect len(values_str) to be len(self.header_info) - 1
-            expected_value_count = len(self.header_info) -1 # Exclude our timestamp
+            # The drone sends 16 values. header_info has 16 entries.
+            # So we expect len(values_str) to be len(self.header_info)
+            expected_value_count = len(self.header_info)
             if len(values_str) != expected_value_count:
                 print(f"Malformed data line: Expected {expected_value_count} values, got {len(values_str)}. Line: '{line}'")
                 return None
@@ -607,29 +589,10 @@ class DroneDataPlotter:
             else:
                 print("No active log file to save at cleanup.")
 
-
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Plot drone yaw data in real-time.')
-    parser.add_argument('--host', type=str, required=True,
-                       help='IP address of the drone (required)')
-    parser.add_argument('--port', type=int, default=23,
-                       help='Port number (default: 23)')
-    parser.add_argument('--window', type=int, default=10,
-                       help='Time window to display in seconds (default: 10)')
-    parser.add_argument('--interval', type=int, default=200,
-                       help='Update interval in milliseconds (default: 200 for 5Hz)')
-    return parser.parse_args()
-
 def main():
     """Main function to run the application."""
-    args = parse_arguments()
     
-    print(f"Starting Drone Data Plotter")
-    print(f"  Host: {args.host}")
-    print(f"  Port: {args.port}")
-    print(f"  Time Window: {args.window} seconds")
-    print(f"  Update Interval: {args.interval} ms")
+    print("Starting Drone Data Plotter")
     print("-" * 40)
     
     plotter = DroneDataPlotter()
