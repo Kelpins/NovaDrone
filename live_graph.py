@@ -41,11 +41,11 @@ class DroneDataPlotter:
             'yaw': deque(maxlen=self.max_data_points),
         }
         self.motor_scalar_data = {
-            'v': deque(maxlen=self.max_data_points),      # vals[12]
-            'f_cw': deque(maxlen=self.max_data_points),   # vals[13]
-            'b_cw': deque(maxlen=self.max_data_points),   # vals[14]
-            'f_ccw': deque(maxlen=self.max_data_points),  # vals[15]
-            'b_ccw': deque(maxlen=self.max_data_points),  # vals[16]
+            'v': deque(maxlen=self.max_data_points),
+            'f_cw': deque(maxlen=self.max_data_points),
+            'b_cw': deque(maxlen=self.max_data_points),
+            'f_ccw': deque(maxlen=self.max_data_points),
+            'b_ccw': deque(maxlen=self.max_data_points), 
         }
 
         # Attributes to store the latest values for UI update and general reference
@@ -81,7 +81,7 @@ class DroneDataPlotter:
         self.last_state_transition_time = time.time()
 
         # Dynamic CSV Logging Initialization
-        self.log_filename_base = "live_log"
+        self.log_filename_base = "ll"
         self.current_log_filename = None
         self.csv_file = None
         self.csv_writer = None
@@ -105,9 +105,9 @@ class DroneDataPlotter:
             {'name': 'Ctrl Yaw', 'csv_col_name': 'ctrl_yaw', 'data_category': 'ctrl_data', 'data_key': 'yaw', 'latest_val_key': 'ctrl_yaw', 'csv_index': 6},
             {'name': 'V Scalar', 'csv_col_name': 'v_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'v', 'latest_val_key': 'v_scalar', 'csv_index': 7},
             {'name': 'F CW Scalar', 'csv_col_name': 'f_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_cw', 'latest_val_key': 'f_cw_scalar', 'csv_index': 8},
-            {'name': 'B CW Scalar', 'csv_col_name': 'b_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_cw', 'latest_val_key': 'b_cw_scalar', 'csv_index': 13},
-            {'name': 'F CCW Scalar', 'csv_col_name': 'f_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_ccw', 'latest_val_key': 'f_ccw_scalar', 'csv_index': 14},
-            {'name': 'B CCW Scalar', 'csv_col_name': 'b_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_ccw', 'latest_val_key': 'b_ccw_scalar', 'csv_index': 15},
+            {'name': 'B CW Scalar', 'csv_col_name': 'b_cw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_cw', 'latest_val_key': 'b_cw_scalar', 'csv_index': 9},
+            {'name': 'F CCW Scalar', 'csv_col_name': 'f_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'f_ccw', 'latest_val_key': 'f_ccw_scalar', 'csv_index': 10},
+            {'name': 'B CCW Scalar', 'csv_col_name': 'b_ccw_scalar', 'data_category': 'motor_scalar_data', 'data_key': 'b_ccw', 'latest_val_key': 'b_ccw_scalar', 'csv_index': 11},
         ]
         # Generate the simple list of CSV column names for writing the CSV header row
         self.header = [info['csv_col_name'] for info in self.header_info]
@@ -260,7 +260,7 @@ class DroneDataPlotter:
         self.current_test_number += 1
         now = datetime.now()
         self.current_log_filename = \
-            f"{self.log_filename_base}_test{self.current_test_number}_{now.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+            f"{self.log_filename_base}_test{self.current_test_number}_{now.strftime('%d_%H-%M-%S')}.csv"
 
         self.csv_file = open(self.current_log_filename, 'w', newline='')
         self.csv_writer = csv.writer(self.csv_file)
