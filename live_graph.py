@@ -1,13 +1,6 @@
 import socket
-import re
 import time
-import sys
-import argparse
 import csv # Added for CSV logging
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import matplotlib.patches as patches # Added for Drone UI
-from matplotlib.animation import FuncAnimation
 from datetime import datetime, timedelta
 from collections import deque
 
