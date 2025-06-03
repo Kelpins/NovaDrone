@@ -714,10 +714,7 @@ void updateMotorVoltagesPID(double dt) {
   double f_ccw_volt = 1000.0 + (f_ccw_cmd * 1000.0);
   double b_ccw_volt = 1000.0 + (b_ccw_cmd * 1000.0);
   
-  // FINAL BCCW BOOST - If BCCW is below 1400us, bump it up
-  if (b_ccw_volt > 1050 && b_ccw_volt < 1400) {
-    b_ccw_volt = 1400;  // Ensure strong minimum signal
-  }
+
 
   // Final safety constraining (should be redundant now)
   f_cw_volt = constrain(f_cw_volt, 1000.0, 2000.0);
