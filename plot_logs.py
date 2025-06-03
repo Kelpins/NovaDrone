@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from collections import deque
 import os
 import numpy as np
+import sys
 
 class LogDataPlotter:
     def __init__(self, log_file_path, window_size=30):
@@ -21,27 +22,11 @@ class LogDataPlotter:
         
         # Initialize data storage
         self.timestamps = deque(maxlen=self.max_data_points)
-        
-        # IMU data
-        self.yaw_data = deque(maxlen=self.max_data_points)
-        self.pitch_data = deque(maxlen=self.max_data_points)
-        self.roll_data = deque(maxlen=self.max_data_points)
-        
-        # Controller data
-        self.ctrl_roll_data = deque(maxlen=self.max_data_points)
-        self.ctrl_pitch_data = deque(maxlen=self.max_data_points)
-        self.ctrl_throttle_data = deque(maxlen=self.max_data_points)
-        self.ctrl_yaw_data = deque(maxlen=self.max_data_points)
-        
-        # Motor scalar data
-        self.v_scalar_data = deque(maxlen=self.max_data_points)
-        self.f_cw_scalar_data = deque(maxlen=self.max_data_points)
-        self.b_cw_scalar_data = deque(maxlen=self.max_data_points)
-        self.f_ccw_scalar_data = deque(maxlen=self.max_data_points)
-        self.b_ccw_scalar_data = deque(maxlen=self.max_data_points)
+        self.data_queues = {} # Stores deques for each column
         
         self.start_time = None
-        self.setup_plot()
+        # Defer setup_plot call until after parse_log_file in main or when data is loaded
+        # self.setup_plot()
     
     def parse_log_file(self):
         """Parse the CSV log file and extract data."""
@@ -49,80 +34,64 @@ class LogDataPlotter:
             with open(self.log_file_path, 'r') as f:
                 reader = csv.reader(f)
                 headers = next(reader)  # Get header row
+
+                # Initialize deques for each header
+                for header in headers:
+                    if header != 'timestamp': # timestamp is handled separately
+                        self.data_queues[header] = deque(maxlen=self.max_data_points)
+
+                scaling_params = {
+                    'ctrl_roll': (1500, 500),
+                    'ctrl_pitch': (1500, 500),
+                    'ctrl_yaw': (1500, 500),
+                    'ctrl_throttle': (1000, 1000.0) # Ensure float division for throttle
+                }
                 
-                for row in reader:
-                    if len(row) < len(headers):  # Skip incomplete rows
-                        continue
-                        
-                    try:
-                        # Extract timestamp (first value)
-                        timestamp = float(row[0])
-                        
-                        # Extract IMU data (first 3 values after timestamp)
-                        imu_yaw = float(row[1])
-                        imu_pitch = float(row[2])
-                        imu_roll = float(row[3])
-                        
-                        # Extract controller outputs (next 4 values)
-                        cout_roll = float(row[4])
-                        cout_pitch = float(row[5])
-                        cout_throttle = float(row[6])
-                        cout_yaw = float(row[7])
-                        
-                        # Extract difference data (next 4 values)
-                        if len(row) > 8:
-                            pitch_diff = float(row[8])
-                            roll_diff = float(row[9])
-                            
-                            # Extract motor scalar data (remaining values)
-                            v_scalar = float(row[12]) if len(row) > 12 else 0
-                            f_cw_scalar = float(row[13]) if len(row) > 13 else 0
-                            b_cw_scalar = float(row[14]) if len(row) > 14 else 0
-                            f_ccw_scalar = float(row[15]) if len(row) > 15 else 0
-                            b_ccw_scalar = float(row[16]) if len(row) > 16 else 0
-                        
-                        # Scale controller outputs for better visualization
-                        scaled_cout_roll = (cout_roll - 1500) / 500  # Scale to ±1
-                        scaled_cout_pitch = (cout_pitch - 1500) / 500
-                        scaled_cout_yaw = (cout_yaw - 1500) / 500
-                        
-                        # Store data
-                        self.timestamps.append(timestamp / 1000.0)  # Convert to seconds
-                        
-                        # IMU data
-                        self.yaw_data.append(imu_yaw)
-                        self.pitch_data.append(imu_pitch)
-                        self.roll_data.append(imu_roll)
-                        
-                        # Controller data
-                        self.ctrl_roll_data.append(scaled_cout_roll)
-                        self.ctrl_pitch_data.append(scaled_cout_pitch)
-                        self.ctrl_yaw_data.append(scaled_cout_yaw)
-                        self.ctrl_throttle_data.append((cout_throttle - 1000) / 1000.0)  # Scale to 0-1
-                        
-                        # Difference data
-                        if len(row) > 8:
-                            self.pitch_diff_data.append(pitch_diff)
-                            self.roll_diff_data.append(roll_diff)
-                            
-                            # Motor scalar data
-                            self.v_scalar_data.append(v_scalar)
-                            self.f_cw_scalar_data.append(f_cw_scalar)
-                            self.b_cw_scalar_data.append(b_cw_scalar)
-                            self.f_ccw_scalar_data.append(f_ccw_scalar)
-                            self.b_ccw_scalar_data.append(b_ccw_scalar)
-                        
-                    except (ValueError, IndexError) as e:
-                        print(f"Warning: Could not parse line: {row}")
-                        print(f"Error: {str(e)}")
-                        continue
+                for row_idx, row in enumerate(reader):
+                    # Warn once if row is short, but proceed with NaN padding
+                    if len(row) < len(headers):
+                        print(f"Warning: Row {row_idx+2} is short ({len(row)} columns, expected {len(headers)}). Missing values will be NaN.")
+
+                    for i, header in enumerate(headers):
+                        if i >= len(row): # Current header is beyond the number of columns in this specific row
+                            if header != 'timestamp': # Timestamps cannot be NaN from missing columns
+                                self.data_queues[header].append(np.nan)
+                                print(f"Warning: Missing data for '{header}' in row {row_idx+2}. Using NaN.")
+                            # If timestamp column itself is missing past len(row), it will be handled by critical check if not populated.
+                            continue # Move to the next header
+
+                        value_str = row[i].strip()
+
+                        if header == 'timestamp':
+                            try:
+                                timestamp = float(value_str) / 1000.0  # Convert to seconds
+                                self.timestamps.append(timestamp)
+                            except ValueError:
+                                raise ValueError(f"Error: Invalid or missing timestamp in row {row_idx+2}: '{value_str}'")
+                        else: # For other data columns
+                            if value_str == "":
+                                self.data_queues[header].append(np.nan)
+                                print(f"Warning: Empty value for '{header}' in row {row_idx+2}. Using NaN.")
+                            else:
+                                try:
+                                    value = float(value_str)
+                                    # Apply scaling if header is in scaling_params
+                                    if header in scaling_params:
+                                        offset, divisor = scaling_params[header]
+                                        value = (value - offset) / divisor
+                                    self.data_queues[header].append(value)
+                                except ValueError:
+                                    self.data_queues[header].append(np.nan)
+                                    print(f"Warning: Non-numeric value for '{header}' in row {row_idx+2}: '{value_str}'. Using NaN.")
             
-            if not self.timestamps:
-                print("No valid data points found.")
+            if not self.timestamps: # If after all rows, no valid timestamps were parsed.
+                # This could happen if all timestamp fields were invalid or missing.
+                print("Error: No valid timestamps found in the log file. Cannot proceed.")
                 return False
                 
             # Set start time based on first timestamp
-            self.start_time = min(self.timestamps)
+            if self.timestamps: # Ensure timestamps is not empty
+                self.start_time = min(self.timestamps)
             return True
             
         except Exception as e:
@@ -130,7 +99,18 @@ class LogDataPlotter:
             return False
     
     def setup_plot(self):
-        """Initialize the matplotlib plot with multiple subplots."""
+        """Initialize the matplotlib plot with multiple subplots dynamically."""
+        # Ensure data is parsed, so self.data_queues is populated
+        if not self.data_queues and not self.timestamps: # Check if parsing happened
+             # Attempt to parse if not already done.
+             # This might be problematic if __init__ expects setup_plot to run
+             # For now, we assume parse_log_file is called before plotting by the user of the class.
+             print("Warning: setup_plot called before parse_log_file or no data loaded. Plot may be empty.")
+             # Or, alternatively, call self.parse_log_file() here if appropriate for the class design
+
+        self.plot_lines = {}
+        self.active_axes = [] # To keep track of axes that actually get plots
+
         plt.style.use('default')
         plt.rcParams.update({
             'axes.grid': True,
@@ -149,119 +129,194 @@ class LogDataPlotter:
         self.fig = plt.figure()
         gs = gridspec.GridSpec(6, 2, height_ratios=[1, 1, 1, 1, 1, 1], width_ratios=[1, 1])
         
-        # Orientation plots (left column)
-        self.ax_yaw = self.fig.add_subplot(gs[0, 0])
-        self.ax_pitch = self.fig.add_subplot(gs[1, 0], sharex=self.ax_yaw)
-        self.ax_roll = self.fig.add_subplot(gs[2, 0], sharex=self.ax_yaw)
-        self.ax_throttle = self.fig.add_subplot(gs[3, 0], sharex=self.ax_yaw)
+        # Define base axes, these might not all be used if data is missing
+        # We will create them but only configure them if they get plots
+        ax_yaw_candidate = self.fig.add_subplot(gs[0, 0])
+        ax_pitch_candidate = self.fig.add_subplot(gs[1, 0], sharex=ax_yaw_candidate)
+        ax_roll_candidate = self.fig.add_subplot(gs[2, 0], sharex=ax_yaw_candidate)
+        ax_throttle_candidate = self.fig.add_subplot(gs[3, 0], sharex=ax_yaw_candidate)
+        ax_diff_candidate = self.fig.add_subplot(gs[0:2, 1], sharex=ax_yaw_candidate)
+        ax_motors_candidate = self.fig.add_subplot(gs[2:4, 1], sharex=ax_yaw_candidate)
         
-        # Difference plots (right column, top)
-        self.ax_diff = self.fig.add_subplot(gs[0:2, 1], sharex=self.ax_yaw)
-        
-        # Motor scalar plots (right column, middle)
-        self.ax_motors = self.fig.add_subplot(gs[2:4, 1], sharex=self.ax_yaw)
-        
-        # Scatter plots for controller vs IMU (right column, bottom)
+        # Scatter plots for controller vs IMU (right column, bottom) - leaving as is for now
         self.ax_scatter = self.fig.add_subplot(gs[4:6, :])
+
+        # Store all candidate axes to manage them later (e.g., for deletion if unused)
+        # ax_scatter is handled separately and always created.
+        self.candidate_axes_map = {
+            'ax_yaw': ax_yaw_candidate, 'ax_pitch': ax_pitch_candidate,
+            'ax_roll': ax_roll_candidate, 'ax_throttle': ax_throttle_candidate,
+            'ax_diff': ax_diff_candidate, 'ax_motors': ax_motors_candidate
+        }
         
-        # Yaw plot
-        self.ln_yaw, = self.ax_yaw.plot([], [], 'b-', lw=1, label='Yaw (IMU)')
-        self.ln_yaw_ctrl, = self.ax_yaw.plot([], [], 'b--', lw=1, alpha=0.7, label='Yaw (Ctrl)')
-        self.ax_yaw.set_ylabel('Yaw (deg)')
-        self.ax_yaw.set_ylim(-200, 200)
-        self.ax_yaw.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_yaw.legend(loc='upper right', fontsize=8)
+        # Define plot configurations
+        # Each dict: ax_attr, ax_candidate, lines_def (key, style, label, alpha), ylabel, [ylim], [title], [extra_config_func]
+        plot_configs = [
+            {
+                'ax_attr': 'ax_yaw', 'ax_cand': ax_yaw_candidate,
+                'lines_def': [('imu_yaw', 'b-', 'Yaw (IMU)', 1.0), ('ctrl_yaw', 'b--', 'Yaw (Ctrl)', 0.7)],
+                'ylabel': 'Yaw (deg)', 'ylim': (-200, 200),
+                'extra_ax_config_func': lambda ax: ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            },
+            {
+                'ax_attr': 'ax_pitch', 'ax_cand': ax_pitch_candidate,
+                'lines_def': [('imu_pitch', 'g-', 'Pitch (IMU)', 1.0), ('ctrl_pitch', 'g--', 'Pitch (Ctrl)', 0.7)],
+                'ylabel': 'Pitch (deg)',
+                'extra_ax_config_func': lambda ax: ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            },
+            {
+                'ax_attr': 'ax_roll', 'ax_cand': ax_roll_candidate,
+                'lines_def': [('imu_roll', 'r-', 'Roll (IMU)', 1.0), ('ctrl_roll', 'r--', 'Roll (Ctrl)', 0.7)],
+                'ylabel': 'Roll (deg)',
+                'extra_ax_config_func': lambda ax: ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            },
+            {
+                'ax_attr': 'ax_throttle', 'ax_cand': ax_throttle_candidate,
+                'lines_def': [('ctrl_throttle', 'm-', 'Throttle', 1.0)],
+                'ylabel': 'Throttle (0-1)', 'ylim': (0, 1),
+                'extra_ax_config_func': lambda ax: ax.set_yticks(np.linspace(0, 1, 6))
+            },
+            {
+                'ax_attr': 'ax_diff', 'ax_cand': ax_diff_candidate,
+                'lines_def': [('pitch_diff', 'c-', 'Pitch Diff', 1.0), ('roll_diff', 'y-', 'Roll Diff', 1.0)],
+                'title': 'Difference Data', 'ylabel': 'Difference',
+                'extra_ax_config_func': lambda ax: ax.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            },
+            {
+                'ax_attr': 'ax_motors', 'ax_cand': ax_motors_candidate,
+                'lines_def': [
+                    ('v_scalar', 'k-', 'V Scalar', 1.0), ('f_cw_scalar', 'b-', 'Front CW', 1.0),
+                    ('b_cw_scalar', 'g-', 'Back CW', 1.0), ('f_ccw_scalar', 'r-', 'Front CCW', 1.0),
+                    ('b_ccw_scalar', 'm-', 'Back CCW', 1.0)
+                ],
+                'title': 'Motor Scalars', 'ylabel': 'Scalar Value', 'ylim': (0, 1.1),
+                'legend_ncol': 2
+            }
+        ]
+
+        active_main_plot_axes = [] # For determining which gets the X-axis label
+
+        for config in plot_configs:
+            ax_cand = config['ax_cand']
+            any_line_plotted = False
+            current_ax_lines = []
+
+            for data_key, style, label, alpha in config['lines_def']:
+                if data_key in self.data_queues:
+                    line, = ax_cand.plot([], [], style, lw=1, label=label, alpha=alpha)
+                    self.plot_lines[data_key] = line
+                    any_line_plotted = True
+                    current_ax_lines.append(line)
+
+            if any_line_plotted:
+                setattr(self, config['ax_attr'], ax_cand) # Set self.ax_yaw, self.ax_pitch etc.
+                ax = getattr(self, config['ax_attr'])
+
+                if 'ylabel' in config: ax.set_ylabel(config['ylabel'])
+                if 'ylim' in config: ax.set_ylim(config['ylim'])
+                if 'title' in config: ax.set_title(config['title'])
+                if config.get('extra_ax_config_func'): config['extra_ax_config_func'](ax)
+
+                ax.legend(loc='upper right', fontsize=config.get('legend_fontsize', 8), ncol=config.get('legend_ncol', 1))
+
+                if ax not in self.active_axes: # Add to global list of active axes
+                    self.active_axes.append(ax)
+
+                # Check if this axis is part of the main left column (sharing x-axis with ax_yaw_candidate)
+                if ax_cand in [ax_yaw_candidate, ax_pitch_candidate, ax_roll_candidate, ax_throttle_candidate]:
+                    active_main_plot_axes.append(ax)
+
+        # Set xlabel on the last active axis in the first column (main shared X axis)
+        if active_main_plot_axes:
+            # Find the lowest positioned axis among the active_main_plot_axes
+            # Based on GridSpec positions gs[0,0], gs[1,0], gs[2,0], gs[3,0]
+            # The one with highest gs-row index is the lowest.
+            # ax_throttle_candidate is gs[3,0], ax_roll_candidate gs[2,0] etc.
+            lowest_ax = active_main_plot_axes[0] # Default to first one
+            if ax_throttle_candidate in active_main_plot_axes: lowest_ax = ax_throttle_candidate
+            elif ax_roll_candidate in active_main_plot_axes: lowest_ax = ax_roll_candidate
+            elif ax_pitch_candidate in active_main_plot_axes: lowest_ax = ax_pitch_candidate
+            # ax_yaw_candidate would be chosen if it's the only one or if others above are not active.
+
+            lowest_ax.set_xlabel('Time (s)')
+
+        # Remove candidate axes that were not used (i.e., no lines plotted on them)
+        for ax_attr_name_key, ax_c in self.candidate_axes_map.items():
+            if not hasattr(self, ax_attr_name_key): # If self.ax_yaw (etc.) was never set
+                 if ax_c in self.fig.axes: # Check if it's still part of the figure
+                    self.fig.delaxes(ax_c)
+            elif getattr(self, ax_attr_name_key) not in self.active_axes : # If it was set but no lines were drawn
+                 if getattr(self, ax_attr_name_key) in self.fig.axes:
+                    self.fig.delaxes(getattr(self, ax_attr_name_key))
+
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96]) # Adjust rect to make space for suptitle
+        # plt.subplots_adjust(hspace=0.5, wspace=0.3) # May not be needed if tight_layout is effective
         
-        # Pitch plot
-        self.ln_pitch, = self.ax_pitch.plot([], [], 'g-', lw=1, label='Pitch (IMU)')
-        self.ln_pitch_ctrl, = self.ax_pitch.plot([], [], 'g--', lw=1, alpha=0.7, label='Pitch (Ctrl)')
-        self.ax_pitch.set_ylabel('Pitch (deg)')
-        self.ax_pitch.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_pitch.legend(loc='upper right', fontsize=8)
-        
-        # Roll plot
-        self.ln_roll, = self.ax_roll.plot([], [], 'r-', lw=1, label='Roll (IMU)')
-        self.ln_roll_ctrl, = self.ax_roll.plot([], [], 'r--', lw=1, alpha=0.7, label='Roll (Ctrl)')
-        self.ax_roll.set_ylabel('Roll (deg)')
-        self.ax_roll.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        self.ax_roll.legend(loc='upper right', fontsize=8)
-        
-        # Throttle plot
-        self.ln_throttle, = self.ax_throttle.plot([], [], 'm-', lw=1, label='Throttle')
-        self.ax_throttle.set_ylabel('Throttle (0-1)')
-        self.ax_throttle.set_ylim(0, 1)
-        self.ax_throttle.set_yticks(np.linspace(0, 1, 6))
-        self.ax_throttle.set_xlabel('Time (s)')
-        self.ax_throttle.legend(loc='upper right', fontsize=8)
-        
-        # Motor scalars plot
-        self.ln_v_scalar, = self.ax_motors.plot([], [], 'k-', lw=1, label='V Scalar')
-        self.ln_f_cw, = self.ax_motors.plot([], [], 'b-', lw=1, label='Front CW')
-        self.ln_b_cw, = self.ax_motors.plot([], [], 'g-', lw=1, label='Back CW')
-        self.ln_f_ccw, = self.ax_motors.plot([], [], 'r-', lw=1, label='Front CCW')
-        self.ln_b_ccw, = self.ax_motors.plot([], [], 'm-', lw=1, label='Back CCW')
-        self.ax_motors.set_title('Motor Scalars')
-        self.ax_motors.set_ylabel('Scalar Value')
-        self.ax_motors.set_ylim(0, 1.1)
-        self.ax_motors.legend(loc='upper right', fontsize=7, ncol=2)
-        
-        # Adjust layout
-        plt.tight_layout()
-        plt.subplots_adjust(hspace=0.5, wspace=0.3)
-        
-        # Set window title and adjust layout
-        self.fig.suptitle(f'Drone Orientation - {datetime.now().strftime("%H:%M:%S")}')
-        plt.tight_layout()
-        plt.subplots_adjust(hspace=0.25)
+        # Set window title
+        if self.fig: # Ensure fig exists
+            self.fig.suptitle(f'Drone Log Data - {os.path.basename(self.log_file_path)} - {datetime.now().strftime("%H:%M:%S")}')
+        # plt.subplots_adjust(hspace=0.25) # May not be needed
     
     def update_plot(self):
         """Update the plot with the parsed data."""
-        if not self.timestamps:
+        if not self.timestamps or not self.plot_lines: # if no timestamps or no lines were set up
             return []
         
         # Convert timestamps to relative seconds
-        timestamps = [t - self.start_time for t in self.timestamps]
+        # Ensure start_time is not None (it should be set in parse_log_file)
+        current_start_time = self.start_time if self.start_time is not None else (self.timestamps[0] if self.timestamps else 0)
+        timestamps_rel = [t - current_start_time for t in self.timestamps]
         
-        # Update orientation plots
-        self.ln_yaw.set_data(timestamps, self.yaw_data)
-        self.ln_yaw_ctrl.set_data(timestamps, self.ctrl_yaw_data)
-        self.ln_pitch.set_data(timestamps, self.pitch_data)
-        self.ln_pitch_ctrl.set_data(timestamps, self.ctrl_pitch_data)
-        self.ln_roll.set_data(timestamps, self.roll_data)
-        self.ln_roll_ctrl.set_data(timestamps, self.ctrl_roll_data)
-        self.ln_throttle.set_data(timestamps, self.ctrl_throttle_data)
-        
-        # Update motor scalar plots
-        self.ln_v_scalar.set_data(timestamps, self.v_scalar_data)
-        self.ln_f_cw.set_data(timestamps, self.f_cw_scalar_data)
-        self.ln_b_cw.set_data(timestamps, self.b_cw_scalar_data)
-        self.ln_f_ccw.set_data(timestamps, self.f_ccw_scalar_data)
-        self.ln_b_ccw.set_data(timestamps, self.b_ccw_scalar_data)
-        
-        
-        # Set x-axis limits based on window size
-        if timestamps:
-            x_min = max(0, timestamps[-1] - self.window_size)
-            x_max = max(self.window_size, timestamps[-1] + 1)
+        # Update all registered plot lines
+        for key, line_artist in self.plot_lines.items():
+            if key in self.data_queues and len(self.data_queues[key]) > 0:
+                # Ensure data queue and timestamps have compatible lengths for plotting
+                # This is mostly a concern if parsing allows partial appends,
+                # but our current parsing appends one by one with timestamps.
+                # However, timestamps deque might be longer than a specific data_queue if there were parsing errors for that key.
+                # So, we plot only up to the minimum length available for that specific key.
+
+                # We need to align data with the main timestamps.
+                # This assumes data_queues[key] corresponds to the *entire* duration of timestamps,
+                # with missing values not added.
+                # A more robust way would be to store (timestamp, value) pairs in data_queues,
+                # but current setup has separate deques.
+                # For now, we assume that if data_queues[key] has N points, they correspond to the latest N timestamps.
+                # This is generally true if maxlen is the same and no parsing errors lead to skipped appends for a key.
+
+                data_to_plot = list(self.data_queues[key])
+                timestamps_for_plot = timestamps_rel
+                # The NaN padding in parse_log_file should ensure len(data_to_plot) == len(timestamps_rel).
+                # If not, set_data might raise an error, highlighting an issue in parsing logic.
+
+                if timestamps_for_plot and data_to_plot: # Ensure both are non-empty
+                    line_artist.set_data(timestamps_for_plot, data_to_plot)
+
+        # Set x-axis limits based on window size for active axes
+        if timestamps_rel:
+            current_max_time = timestamps_rel[-1]
+            x_min = max(0, current_max_time - self.window_size)
+            x_max = max(self.window_size, current_max_time + 1) # Add a little buffer
             
-            # Set xlim for all time-based plots
-            for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll, 
-                      self.ax_throttle, self.ax_diff, self.ax_motors]:
+            for ax in self.active_axes: # Only update active axes
                 ax.set_xlim(x_min, x_max)
-            
-            # Auto-scale y-axes for orientation plots
-            for ax in [self.ax_yaw, self.ax_pitch, self.ax_roll, self.ax_diff]:
-                ax.relim()
-                ax.autoscale_view()
-        
+
+                # Auto-scale y-axes for these plots
+                # (Throttle and Motors have fixed Y unless we change it)
+                # self.ax_throttle and self.ax_motors (if they exist) have predefined Y limits or styles
+                # that might not be suitable for general autoscaling.
+                if hasattr(self, 'ax_throttle') and ax == self.ax_throttle:
+                    pass # Typically fixed Y-axis for throttle
+                elif hasattr(self, 'ax_motors') and ax == self.ax_motors:
+                    pass # Typically fixed Y-axis for motors
+                else: # For other plots like yaw, pitch, roll, diff
+                    ax.relim()
+                    ax.autoscale_view(tight=False, scalex=False, scaley=True) # Autoscale Y, keep X fixed by xlim
+
         # Collect all artists to return
-        artists = [
-            self.ln_yaw, self.ln_yaw_ctrl,
-            self.ln_pitch, self.ln_pitch_ctrl,
-            self.ln_roll, self.ln_roll_ctrl,
-            self.ln_throttle,
-            self.ln_v_scalar, self.ln_f_cw, self.ln_b_cw, self.ln_f_ccw, self.ln_b_ccw,
-        ]
+        # Only return artists that are part of self.plot_lines
+        artists = list(self.plot_lines.values())
         
         return artists
 
@@ -275,16 +330,18 @@ def main():
     args = parser.parse_args()
     
     if not os.path.isfile(args.log_file):
-        print(f"Error: File '{args.log_file}' not found.")
-        return
+        print(f"Error: File '{args.log_file}' not found.", file=sys.stderr)
+        sys.exit(1)
     
     plotter = LogDataPlotter(args.log_file, args.window)
     
     if plotter.parse_log_file():
-        plotter.update_plot()
+        plotter.setup_plot() # Call setup_plot after parsing data
+        plotter.update_plot() # Initial update
         plt.show()
     else:
-        print("Failed to parse log file.")
+        print("Error: Failed to parse log file.", file=sys.stderr) # Print to stderr
+        sys.exit(1) # Exit with status 1
 
 if __name__ == "__main__":
     main()
